@@ -1,0 +1,4 @@
+interface:
+  display_name: "SVGFilm 工程协议"
+  short_description: "为工作台创建跨 AI 可导入、可编辑的 SVG 动画工程与交付包"
+  default_prompt: "使用 $svgfilm-authoring 按工作台协议创建可编辑 SVG 动画工程，并验证导入兼容性。"

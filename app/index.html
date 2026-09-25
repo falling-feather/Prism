@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>映物 · Prism — SVG 动画工作台</title>
+    <link rel="stylesheet" href="src/editor.css" />
+  </head>
+  <body class="workspace-inspector-hidden timeline-collapsed">
+    <header>
+      <div class="brand">
+        <span class="brand-icon">▱</span>
+        <div>
+          <strong>映物 · Prism</strong
+          ><small>把道理，映成画面</small>
+        </div>
+      </div>
+      <div class="project-title">
+        <input id="projectTitle" aria-label="视频名称" /><span id="saveState"
+          >正在载入</span
+        >
+      </div>
+      <nav>
+        <button id="importBtn">导入</button
+        ><button id="saveBtn">保存工程</button
+        ><button id="exportBtn" class="primary">导出视频 ↗</button>
+      </nav>
+    </header>
+    <main class="workspace">
+      <aside class="scenes-panel">
+        <div class="panel-heading">
+          <strong>镜头</strong><span id="sceneCount"></span
+          ><button id="addSvg" title="导入 SVG 作为新镜头">＋</button>
+        </div>
+        <div id="sceneList"></div>
+        <div class="scene-actions">
+          <button id="duplicateBtn">复制</button
+          ><button id="upBtn" title="镜头前移">↑</button
+          ><button id="downBtn" title="镜头后移">↓</button
+          ><button id="deleteScene">删除</button>
+        </div>
+      </aside>
+      <section class="viewer-panel">
+        <div class="viewer-toolbar">
+          <div>
+            <button
+              id="toggleScenes"
+              aria-label="镜头列表开关"
+              aria-expanded="true"
+              title="显示或收起镜头列表"
+            >
+              镜头
+            </button>
+            <button
+              id="toggleInspector"
+              aria-label="属性面板开关"
+              aria-expanded="false"
+              title="显示或收起属性面板"
+            >
+              属性
+            </button>
+            <button id="undoBtn" title="撤销 Ctrl+Z">↶</button
+            ><button id="redoBtn" title="重做 Ctrl+Shift+Z">↷</button
+            ><span id="sceneName"></span>
+          </div>
+          <div>
+            <div class="canvas-modes" aria-label="画布工具">
+              <button id="selectMode" aria-pressed="true">选择</button>
+              <button
+                id="marqueeMode"
+                aria-pressed="false"
+                title="拖框完整包围组件；Shift追加"
+              >
+                框选
+              </button>
+            </div>
+            <label class="depth-option" title="勾选后可选择组件内部的子部件"
+              ><input id="deepSelect" type="checkbox" />深入部件</label
+            >
+            <button id="fitBtn">重置布局</button
+            ><button id="svgBtn">当前帧 SVG</button>
+          </div>
+        </div>
+        <div id="stageArea">
+          <div id="stageWrap">
+            <svg id="stage" aria-label="视频画布"></svg>
+            <div id="selectionItems"></div>
+            <div id="marquee" hidden></div>
+            <div id="selection" hidden>
+              <span id="selectionLabel" title="拖动移动所选组件"></span
+              ><b id="resizeHandle" title="按所选模式缩放"></b>
+            </div>
+          </div>
+        </div>
+        <div class="viewer-footer">
+          <span id="selectionHint"
+            >空白处拖框选择 · Shift追加 · 双击详细编辑</span
+          ><button id="restoreDraft" hidden>恢复上次草稿</button
+          ><span id="reviewState"></span>
+          <div id="selectionActions" hidden>
+            <strong id="selectedCount" role="status"></strong>
+            <button id="editSelection">编辑所选</button>
+            <label
+              >缩放方式
+              <select id="scaleMode">
+                <option value="group">整体缩放</option>
+                <option value="individual">各自缩放</option>
+              </select></label
+            >
+            <label
+              ><input
+                id="selectionScale"
+                type="number"
+                min="5"
+                max="2000"
+                step="5"
+                value="110"
+                aria-label="批量缩放百分比"
+              />%</label
+            >
+            <button id="applySelectionScale">应用缩放</button>
+            <button
+              id="deleteSelection"
+              class="danger"
+              title="从当前镜头移除所选组件，可撤销（Delete / Backspace）"
+            >
+              删除所选
+            </button>
+            <button id="clearSelection" title="清除选择 Esc">取消选择</button>
+          </div>
+        </div>
+      </section>
+      <aside class="inspector-panel">
+        <div class="tabs">
+          <button data-tab="text" class="active">文字</button
+          ><button data-tab="object">组件</button
+          ><button data-tab="audio">声音</button
+          ><button data-tab="scene">镜头</button
+          ><button
+            id="closeInspector"
+            aria-label="收起属性面板"
+            title="收起属性面板"
+          >
+            ×
+          </button>
+        </div>
+        <div id="inspector"></div>
+      </aside>
+    </main>
+    <section class="timeline">
+      <div
+        id="timelineResize"
+        role="separator"
+        tabindex="0"
+        aria-label="调整时间轴高度"
+        aria-orientation="horizontal"
+        title="上下拖动调整高度；方向键微调；双击恢复默认高度"
+      ></div>
+      <div class="timeline-toolbar">
+        <div class="transport">
+          <button id="prevBtn" title="上一镜头">Ⅰ◀</button
+          ><button id="playBtn" class="play" aria-label="播放">▶</button
+          ><button id="nextBtn" title="下一镜头">▶Ⅰ</button
+          ><span id="timeLabel"></span
+          ><input
+            id="playheadTimecode"
+            aria-label="播放头时间码"
+            title="输入秒数或 HH:MM:SS:帧，按回车定位"
+            value="00:00:00:00"
+          /><label class="loop"
+            ><input type="checkbox" id="loopScene" />本幕循环</label
+          >
+        </div>
+        <div class="timeline-options">
+          <div id="timelineEditingTools">
+            <button
+              id="timelineMagnet"
+              aria-pressed="true"
+              title="磁吸开关 N；按住 Alt 临时关闭"
+            >
+              磁吸
+            </button>
+            <select
+              id="snapTolerance"
+              aria-label="磁吸距离"
+              title="磁吸距离不随缩放改变"
+            >
+              <option value="4">近</option>
+              <option value="8" selected>标准</option>
+              <option value="12">强</option>
+            </select>
+            <select id="timelinePrecision" aria-label="时间精度">
+              <option value="frame">按帧</option>
+              <option value="millisecond">毫秒</option>
+            </select>
+            <button id="splitBtn">在播放头拆分</button
+            ><button id="addSubtitle">＋ 字幕</button
+            ><button id="srtImport">导入 SRT</button
+            ><button id="srtExport">导出 SRT</button
+            ><label class="zoom"
+              >缩放
+              <input
+                id="timelineZoom"
+                type="range"
+                min="0"
+                max="100"
+                step="0.1"
+                value="60"
+                aria-label="时间轴缩放" /></label
+            ><span id="zoomLabel"></span
+            ><button id="fitTimeline">适应全片</button>
+          </div>
+          <button
+            id="toggleTimeline"
+            aria-expanded="false"
+            aria-controls="timelineTracks"
+          >
+            展开时间轴 ▴
+          </button>
+        </div>
+      </div>
+      <div id="timelineContext" hidden>
+        <strong id="timelineSelectedName"></strong
+        ><span id="timelineSelectedRange"></span>
+        <select id="timelineAction" aria-label="时间轴编辑操作">
+          <option value="move">移动片段</option>
+          <option value="start">裁剪开头</option>
+          <option value="end">裁剪结尾</option>
+        </select>
+        <input
+          id="timelineValue"
+          aria-label="目标时间"
+          title="全片参考时刻：秒数或 HH:MM:SS:帧"
+        /><button id="applyTimelineTime">应用时间</button>
+        <button id="nudgeEarlier" title="提前1帧；Shift为10帧；快捷键Alt+左">
+          −1帧</button
+        ><button id="nudgeLater" title="延后1帧；Shift为10帧；快捷键Alt+右">
+          +1帧
+        </button>
+        <select id="timelineAlign" aria-label="对齐与裁剪">
+          <option value="">对齐／裁剪…</option>
+          <option value="align-start">左边缘对齐播放头</option>
+          <option value="align-end">右边缘对齐播放头</option>
+          <option value="trim-start">裁去播放头前</option>
+          <option value="trim-end">裁去播放头后</option>
+          <option value="join-previous">贴齐同类前段</option>
+        </select>
+        <button id="zoomTimelineSelection">放大选段</button
+        ><button id="timelineDetails">详细参数</button
+        ><button id="clearTimelineSelection" aria-label="取消时间轴选择">
+          ×
+        </button>
+      </div>
+      <div class="timeline-layout" id="timelineTracks">
+        <div class="track-labels">
+          <span>时间</span><span>镜头</span><span>字幕</span><span>声音</span>
+        </div>
+        <div id="timelineScroll">
+          <div id="timelineBody">
+            <div id="ruler"></div>
+            <div id="clipTrack" class="track"></div>
+            <div id="subtitleTrack" class="track"></div>
+            <div id="audioTrack" class="track"></div>
+            <div id="playhead"><i></i></div>
+            <div id="snapGuide" hidden><span></span></div>
+            <div id="timelineGhost" hidden></div>
+            <div id="timelineDragReadout" hidden></div>
+            <div id="filmEndMarker"><span>片尾</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <input
+      id="fileInput"
+      type="file"
+      accept=".json,.svgfilm,.zip,.svg,.html"
+      hidden
+    /><input id="svgInput" type="file" accept=".svg" hidden /><input
+      id="audioInput"
+      type="file"
+      accept="audio/*"
+      hidden
+    /><input id="srtInput" type="file" accept=".srt" hidden />
+    <div id="toast" role="status"></div>
+    <dialog id="exportDialog">
+      <form method="dialog">
+        <div class="dialog-head">
+          <h2>导出课堂视频</h2>
+          <button aria-label="关闭">×</button>
+        </div>
+      </form>
+      <p>画面、文字、剪辑与声音将按当前工程输出。</p>
+      <div class="field">
+        <label>导出范围</label
+        ><select id="exportRange">
+          <option value="scene">当前镜头</option>
+          <option value="all">完整视频</option>
+        </select>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label>清晰度</label
+          ><select id="exportSize">
+            <option value="1280">720p · 快速</option>
+            <option value="1920">1080p · 课堂推荐</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>格式</label
+          ><select id="exportType">
+            <option value="mp4">MP4 视频</option>
+            <option value="html">独立播放 HTML（全片）</option>
+          </select>
+        </div>
+      </div>
+      <progress id="exportProgress" max="100" value="0" hidden></progress>
+      <p id="exportStatus"></p>
+      <div class="dialog-actions">
+        <button id="cancelExport" hidden>取消导出</button
+        ><button id="startExport" class="primary">开始导出</button>
+      </div>
+      <a id="downloadExport" class="download" hidden>下载成片</a>
+    </dialog>
+    <script>
+      if (location.protocol === "file:") {
+        document.body.innerHTML =
+          '<main style="max-width:640px;margin:15vh auto;font:18px/1.8 system-ui"><h1>打开教师视频编辑器</h1><p>请双击同文件夹中的「启动工作台.bat」。它会打开编辑器，并提供视频导出服务。</p><a href="http://127.0.0.1:8765">服务已启动，进入工作台 →</a></main>';
+      }
+    </script>
+    <script src="cases/cell_structure/native_source/src/motion.js"></script>
+    <script src="cases/cell_structure/native_source/src/art.js"></script>
+    <script src="cases/cell_structure/native_source/src/organelles.js"></script>
+    <script src="cases/cell_structure/native_source/src/scenes.js"></script>
+    <script type="module" src="src/editor.mjs"></script>
+  </body>
+</html>

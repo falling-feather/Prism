@@ -1,0 +1,47 @@
+{
+  "schema": "svgfilm-project",
+  "schemaVersion": "0.3.0",
+  "projectId": "svgfilm-protocol-example",
+  "title": "协议示例：组件运动与编辑",
+  "canvas": {"width": 960, "height": 540, "fps": 30, "background": "#ffffff"},
+  "workflow": {"script": {"status": "needs-review"}},
+  "captionStyle": {"size": 24, "font": "sans-serif", "fill": "#263442"},
+  "sources": {
+    "motion": {
+      "type": "svg-keyframes-v1",
+      "duration": 3,
+      "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 960 540\"><text id=\"title\" x=\"60\" y=\"80\" font-family=\"sans-serif\" font-size=\"36\" fill=\"#263442\">组件可以运动，也可以继续编辑</text><g id=\"carrier\" data-object=\"移动组件 A\"><rect id=\"body\" x=\"140\" y=\"200\" width=\"120\" height=\"120\" rx=\"16\" fill=\"#397ab8\"/><text id=\"label\" x=\"200\" y=\"270\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"24\" fill=\"#ffffff\">组件 A</text></g><circle id=\"station\" data-object=\"固定组件 B\" cx=\"770\" cy=\"260\" r=\"60\" fill=\"#ca7848\"/><text id=\"station-label\" x=\"770\" y=\"360\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"24\" fill=\"#263442\">组件 B</text></svg>",
+      "animations": [
+        {
+          "target": "carrier",
+          "origin": [200, 260],
+          "tracks": {
+            "x": [{"time": 0, "value": 0, "easing": "ease-in-out"}, {"time": 2.5, "value": 350}, {"time": 3, "value": 350}],
+            "scale": [{"time": 0, "value": 1}, {"time": 2.5, "value": 1.15}],
+            "rotation": [{"time": 0, "value": 0}, {"time": 2.5, "value": 12}],
+            "opacity": [{"time": 0, "value": 0}, {"time": 0.4, "value": 1}]
+          }
+        }
+      ]
+    },
+    "summary": {
+      "type": "svg-keyframes-v1",
+      "duration": 3,
+      "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 960 540\"><text id=\"title\" x=\"60\" y=\"90\" font-family=\"sans-serif\" font-size=\"36\" fill=\"#263442\">导入后，试着做三项修改</text><text id=\"step-one\" x=\"90\" y=\"210\" font-family=\"sans-serif\" font-size=\"28\" fill=\"#263442\">1. 修改前一幕的标题或组件文字</text><text id=\"step-two\" x=\"90\" y=\"285\" font-family=\"sans-serif\" font-size=\"28\" fill=\"#263442\">2. 移动组件，检查它的动画仍然保留</text><text id=\"step-three\" x=\"90\" y=\"360\" font-family=\"sans-serif\" font-size=\"28\" fill=\"#263442\">3. 调整字幕时间，保存并重新导入</text></svg>",
+      "animations": [{"target": "title", "tracks": {"opacity": [{"time": 0, "value": 0}, {"time": 0.4, "value": 1}]}}]
+    }
+  },
+  "scenes": [
+    {
+      "id": "scene-motion", "sourceId": "motion", "name": "组件运动", "in": 0, "out": 3, "hold": 0,
+      "texts": [], "objects": [], "objectOverrides": {},
+      "subtitles": [{"id": "motion-caption", "text": "图形、文字和动画分别保留编辑能力。", "start": 0.3, "end": 2.9}]
+    },
+    {
+      "id": "scene-summary", "sourceId": "summary", "name": "手动修改验证", "in": 0, "out": 3, "hold": 0,
+      "texts": [], "objects": [], "objectOverrides": {},
+      "subtitles": [{"id": "summary-caption", "text": "工程是交付源文件，MP4 是观看成品。", "start": 0.3, "end": 2.9}]
+    }
+  ],
+  "audioTracks": []
+}

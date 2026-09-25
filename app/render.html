@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+      svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <svg id="stage"></svg>
+    <script src="cases/cell_structure/native_source/src/motion.js"></script>
+    <script src="cases/cell_structure/native_source/src/art.js"></script>
+    <script src="cases/cell_structure/native_source/src/organelles.js"></script>
+    <script src="cases/cell_structure/native_source/src/scenes.js"></script>
+    <script type="module">
+      import { Renderer } from "./src/renderer.mjs";
+      import { validateProject, frameCount } from "./src/project.mjs";
+      const id = new URLSearchParams(location.search).get("job");
+      const response = await fetch(
+        "/api/exports/" + encodeURIComponent(id) + "/project",
+      );
+      if (!response.ok) throw Error("导出工程不存在");
+      const project = await response.json();
+      validateProject(project);
+      const renderer = new Renderer(document.querySelector("#stage"));
+      renderer.load(project);
+      await document.fonts.ready;
+      window.exporter = {
+        ready: true,
+        frameCount: (seconds) => frameCount(seconds, project.canvas.fps),
+        render: (t) => renderer.render(t),
+        snapshot: () => renderer.snapshot(),
+      };
+    </script>
+  </body>
+</html>
