@@ -1,4 +1,4 @@
-import { clone, clamp } from "./project.mjs";
+import { clone, clamp, snapshotProject } from "./project.mjs";
 import {
   canonicalIds,
   containsRect,
@@ -401,7 +401,7 @@ export class CanvasSelection {
       return;
     }
     const scene = this.hooks.scene(),
-      before = clone(this.hooks.project()),
+      before = snapshotProject(this.hooks.project()),
       base = { objectOverrides: clone(scene.objectOverrides) },
       inverse = this.renderer.svg.getScreenCTM().inverse(),
       start = new DOMPoint(event.clientX, event.clientY).matrixTransform(

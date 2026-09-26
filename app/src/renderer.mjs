@@ -46,6 +46,8 @@ const textSignature = (t) =>
     t.anchor || "start",
   ]);
 function paintText(e, t, template) {
+  const signature = textSignature(t);
+  if (e.dataset.signature === signature) return;
   const font = t.font || "KaiTi, STKaiti, serif";
   e.setAttribute("x", t.x);
   e.setAttribute("y", t.y);
@@ -59,10 +61,12 @@ function paintText(e, t, template) {
     fill: t.fill || "#252720",
     textAnchor: t.anchor || "start",
   });
-  const signature = textSignature(t);
-  if (e.dataset.signature === signature) return;
   e.dataset.signature = signature;
   if (template?.signature === signature) {
+    for (const key of ["x", "y"]) {
+      if (template.position[key] === null) e.removeAttribute(key);
+      else e.setAttribute(key, template.position[key]);
+    }
     e.replaceChildren(...template.children.map((n) => n.cloneNode(true)));
     return;
   }
@@ -213,6 +217,14 @@ export class Renderer {
   load(project) {
     validateProject(project);
     this.project = project;
+    this.loadedSources = project.sources;
+    this.loadedCanvas = JSON.stringify([
+      project.canvas.width,
+      project.canvas.height,
+      project.canvas.background,
+    ]);
+    this.activeSource = null;
+    this.captionSignature = null;
     this.svg.replaceChildren();
     this.svg.setAttribute(
       "viewBox",
@@ -340,6 +352,7 @@ export class Renderer {
           e.dataset.signature = textSignature(meta);
           textTemplates.set(tid, {
             signature: e.dataset.signature,
+            position: { x: e.getAttribute("x"), y: e.getAttribute("y") },
             children: [...e.childNodes].map((n) => n.cloneNode(true)),
           });
           texts.push(meta);
@@ -384,6 +397,24 @@ export class Renderer {
         wrappers,
         textTemplates,
         motions,
+        ground: host.querySelector("[data-ground]"),
+        appliedOverrides: new Map(),
+        textNodes: new Map(
+          texts.map((t) => {
+            const group = host.querySelector(
+              `[data-text-id="${CSS.escape(t.id)}"]`,
+            );
+            return [
+              t.id,
+              {
+                group,
+                content: group?.matches("text")
+                  ? group
+                  : group?.querySelector("[data-content]"),
+              },
+            ];
+          }),
+        ),
       });
       host.style.display = "none";
     }
@@ -399,14 +430,30 @@ export class Renderer {
     }
     this.render(0);
   }
+  updateProject(project) {
+    if (
+      this.loadedSources !== project.sources ||
+      this.loadedCanvas !==
+        JSON.stringify([
+          project.canvas.width,
+          project.canvas.height,
+          project.canvas.background,
+        ])
+    )
+      this.load(project);
+    else this.project = project;
+  }
   render(time) {
     const p = this.project,
       pos = locate(p, time);
     if (!pos) return;
     const s = pos.scene,
       src = this.sources.get(s.sourceId);
-    for (const v of this.sources.values())
-      v.host.style.display = v === src ? "" : "none";
+    if (this.activeSource !== src) {
+      for (const v of this.sources.values())
+        v.host.style.display = v === src ? "" : "none";
+      this.activeSource = src;
+    }
     src.api?.render(s.sourceId, pos.sourceTime, pos.sourceTime);
     for (const { node, animation } of src.motions) {
       const a = sampleAnimation(animation, pos.sourceTime),
@@ -417,7 +464,7 @@ export class Renderer {
       );
       node.setAttribute("opacity", a.opacity);
     }
-    const ground = src.host.querySelector("[data-ground]");
+    const ground = src.ground;
     if (ground) {
       let d = `M0 ${M.ground(0, pos.sourceTime)}`;
       for (let x = 32; x <= 1280; x += 32)
@@ -428,6 +475,17 @@ export class Renderer {
       const w = src.wrappers.get(o.id),
         ov = s.objectOverrides[o.id] || {};
       if (!w) continue;
+      const signature = JSON.stringify([
+        ov.hidden,
+        ov.dx,
+        ov.dy,
+        ov.scale,
+        ov.rotation,
+        o.cx,
+        o.cy,
+      ]);
+      if (src.appliedOverrides.get(o.id) === signature) continue;
+      src.appliedOverrides.set(o.id, signature);
       w.style.display = ov.hidden ? "none" : "";
       w.setAttribute(
         "transform",
@@ -435,13 +493,7 @@ export class Renderer {
       );
     }
     for (const t of s.texts) {
-      const group = src.host.querySelector(
-        `[data-text-id="${CSS.escape(t.id)}"]`,
-      );
-      if (!group) continue;
-      const e = group.matches("text")
-        ? group
-        : group.querySelector("[data-content]");
+      const { group, content: e } = src.textNodes.get(t.id) || {};
       if (!e) continue;
       paintText(e, t, src.textTemplates.get(t.id));
       if (!src.api)
@@ -451,36 +503,46 @@ export class Renderer {
             : "hidden";
       group.setAttribute("data-source-text", t.text);
     }
-    this.captionLayer.replaceChildren();
     const visible = s.subtitles.filter(
       (l) => pos.local >= l.start && pos.local < l.end,
     );
-    let baseline = p.canvas.height - 38;
-    for (const l of [...visible].reverse()) {
-      const size = p.captionStyle?.size || 28,
-        font = p.captionStyle?.font || "KaiTi, STKaiti, serif";
-      const rows = wrap(l.text, size, font, p.canvas.width - 100);
-      const e = element(
-        "text",
-        {
-          "data-subtitle-id": l.id,
-          stroke: p.canvas.background || "#e7e5da",
-          "stroke-width": 4,
-          "paint-order": "stroke",
-        },
-        this.captionLayer,
-      );
-      paintText(e, {
-        text: rows.join("\n"),
-        x: p.canvas.width / 2,
-        y: baseline - (rows.length - 1) * size * 1.3,
-        size,
-        font,
-        fill: p.captionStyle?.fill || "#252720",
-        anchor: "middle",
-        width: 0,
-      });
-      baseline -= rows.length * size * 1.3 + 12;
+    const captionSignature = JSON.stringify([
+      visible,
+      p.captionStyle,
+      p.canvas.width,
+      p.canvas.height,
+      p.canvas.background,
+    ]);
+    if (this.captionSignature !== captionSignature) {
+      this.captionSignature = captionSignature;
+      this.captionLayer.replaceChildren();
+      let baseline = p.canvas.height - 38;
+      for (const l of [...visible].reverse()) {
+        const size = p.captionStyle?.size || 28,
+          font = p.captionStyle?.font || "KaiTi, STKaiti, serif";
+        const rows = wrap(l.text, size, font, p.canvas.width - 100);
+        const e = element(
+          "text",
+          {
+            "data-subtitle-id": l.id,
+            stroke: p.canvas.background || "#e7e5da",
+            "stroke-width": 4,
+            "paint-order": "stroke",
+          },
+          this.captionLayer,
+        );
+        paintText(e, {
+          text: rows.join("\n"),
+          x: p.canvas.width / 2,
+          y: baseline - (rows.length - 1) * size * 1.3,
+          size,
+          font,
+          fill: p.captionStyle?.fill || "#252720",
+          anchor: "middle",
+          width: 0,
+        });
+        baseline -= rows.length * size * 1.3 + 12;
+      }
     }
     this.svg.dataset.scene = s.id;
     this.svg.dataset.time = String(time);

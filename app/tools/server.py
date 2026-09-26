@@ -1,7 +1,7 @@
 """Local editor, portable documents and bounded export jobs. Binds loopback only."""
 from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit,unquote
+from urllib.parse import urlsplit,unquote,parse_qs
 import argparse,io,json,math,mimetypes,re,shutil,subprocess,sys,threading,uuid,zipfile,webbrowser
 ROOT=Path(__file__).resolve().parents[1]
 WORK=ROOT/'.work'/'jobs'
@@ -24,6 +24,7 @@ def portable(project):
     return output
 
 def check_request(d):
+    if d.get('exportMode','compatibility') not in ('auto','fast','compatibility'):raise ValueError('不支持的导出方式')
     p=d.get('project',{})
     if p.get('schemaVersion') not in ('0.2.0','0.3.0') or p.get('schema')!='svgfilm-project':raise ValueError('请先通过工作台载入并保存为支持的工程')
     scenes=p.get('scenes',[])
@@ -40,7 +41,7 @@ def check_request(d):
 
 def run_job(id,request):
     job=JOBS[id];folder=job['folder'];p,width,start,end=check_request(request)
-    command=[sys.executable,'-X','utf8',str(ROOT/'tools/render_svgfilm.py'),'--project',str(folder/'project.json'),'--url',f'http://127.0.0.1:{PORT}','--job',id,'--out',str(folder/'video.mp4'),'--width',str(width),'--start',str(start),'--end',str(end),'--cancel',str(folder/'cancel')]
+    command=[sys.executable,'-X','utf8',str(ROOT/'tools/render_svgfilm.py'),'--project',str(folder/'project.json'),'--url',f'http://127.0.0.1:{PORT}','--job',id,'--out',str(folder/'video.mp4'),'--width',str(width),'--start',str(start),'--end',str(end),'--cancel',str(folder/'cancel'),'--mode',request.get('exportMode','compatibility')]
     try:
         job.update(status='running',message='正在载入画面');process=subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding='utf-8',cwd=ROOT)
         with (folder/'render.log').open('w',encoding='utf-8') as log:
@@ -48,12 +49,15 @@ def run_job(id,request):
                 log.write(line);log.flush()
                 try:
                     info=json.loads(line)
-                    if isinstance(info,dict) and 'progress' in info:job.update(progress=info['progress'],message=info.get('message',''))
+                    if isinstance(info,dict) and 'progress' in info:
+                        job.update(progress=info['progress'],message=info.get('message',''))
+                        for key in ('exportMode','fallbackReason','performance'):
+                            if key in info:job[key]=info[key]
                 except json.JSONDecodeError:pass
         code=process.wait()
         if (folder/'cancel').exists():job.update(status='cancelled',message='导出已取消');(folder/'video.mp4').unlink(missing_ok=True)
         elif code:job.update(status='failed',message=job.get('message') or '导出失败，请检查本机渲染环境')
-        else:job.update(status='complete',progress=100,message='导出完成，可下载 MP4')
+        else:job.update(status='complete',progress=100,message=('快速导出完成' if job.get('exportMode')=='fast' else '兼容导出完成')+'，可下载 MP4')
     except Exception as e:job.update(status='failed',message=str(e))
     finally:BUSY.release()
 
@@ -73,12 +77,16 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if not self.allowed():return self.send({'error':'仅允许本机编辑器访问'},403)
         path=urlsplit(self.path).path
-        if path=='/api/health':return self.send({'ready':True,'version':'0.3.0','ffmpeg':bool(shutil.which('ffmpeg')),'activeExports':sum(j['status'] in ('queued','running') for j in JOBS.values())})
+        if path=='/api/health':return self.send({'ready':True,'version':'0.3.1','schemaVersions':['0.2.0','0.3.0'],'exportModes':['auto','fast','compatibility'],'ffmpeg':bool(shutil.which('ffmpeg')),'activeExports':sum(j['status'] in ('queued','running') for j in JOBS.values())})
         match=re.fullmatch(r'/api/exports/([a-f0-9]{32})(?:/(project|download))?',path)
         if match:
             job=JOBS.get(match[1])
             if not job:return self.send({'error':'导出任务不存在'},404)
-            if match[2]=='project':return self.send((job['folder']/'project.json').read_bytes())
+            if match[2]=='project':
+                raw=(job['folder']/'project.json').read_bytes()
+                if parse_qs(urlsplit(self.path).query).get('visual')==['1']:
+                    project=json.loads(raw);project['audioTracks']=[];return self.send(project)
+                return self.send(raw)
             if match[2]=='download':
                 if job['status']!='complete':return self.send({'error':'视频尚未生成'},409)
                 f=job['folder']/'video.mp4';self.send_response(200);self.send_header('Content-Type','video/mp4');self.send_header('Content-Length',str(f.stat().st_size));self.send_header('Content-Disposition','attachment; filename="lesson.mp4"');self.end_headers()

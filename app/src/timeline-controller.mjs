@@ -196,8 +196,32 @@ export class TimelineController {
       this.pending = true;
       return;
     }
-    const items = T.items(p),
-      wanted = new Set(),
+    const items = T.items(p);
+    const signature = JSON.stringify([
+      this.scale,
+      this.scroll.clientWidth,
+      p.canvas.fps,
+      items.map((i) => [
+        T.refKey(i.ref),
+        i.start,
+        i.end,
+        i.label,
+        i.item.kind,
+        i.item.muted,
+      ]),
+    ]);
+    if (this.renderSignature === signature) {
+      for (const item of items) {
+        const record = this.nodes.get(T.refKey(item.ref));
+        if (record) record.item = item;
+      }
+      this.highlight();
+      this.context();
+      this.updateHead(this.hooks.time());
+      return;
+    }
+    this.renderSignature = signature;
+    const wanted = new Set(),
       counts = { scene: 0, subtitle: 0, audio: 0 };
     const tracks = {
       scene: $("#clipTrack"),
@@ -582,6 +606,11 @@ export class TimelineController {
     };
     const end = (cancel) => {
       if (this.gesture !== g) return;
+      if (g.previewFrame) {
+        cancelAnimationFrame(g.previewFrame);
+        g.previewFrame = null;
+        if (!cancel) g.update(g.last);
+      }
       g.controller.abort();
       cancelAnimationFrame(g.scrollFrame);
       this.gesture = null;
@@ -634,7 +663,19 @@ export class TimelineController {
     };
     g.cancel = () => end(true);
     const options = { signal: g.controller.signal };
-    window.addEventListener("pointermove", (e) => g.update(e), options);
+    g.queueUpdate = (e) => {
+      g.last = { clientX: e.clientX, clientY: e.clientY, altKey: e.altKey };
+      if (!g.previewFrame)
+        g.previewFrame = requestAnimationFrame(() => {
+          g.previewFrame = null;
+          if (this.gesture === g) g.update(g.last);
+        });
+    };
+    window.addEventListener(
+      "pointermove",
+      (e) => (part === "head" ? g.queueUpdate(e) : g.update(e)),
+      options,
+    );
     window.addEventListener("pointerup", () => end(false), options);
     window.addEventListener("pointercancel", () => end(true), options);
     window.addEventListener("blur", () => end(true), options);
@@ -685,7 +726,8 @@ export class TimelineController {
       if (speed && (g.part === "head" || g.moved)) {
         const previous = this.scroll.scrollLeft;
         this.scroll.scrollLeft += speed;
-        if (this.scroll.scrollLeft !== previous) g.update(g.last);
+        if (this.scroll.scrollLeft !== previous)
+          g.part === "head" ? g.queueUpdate(g.last) : g.update(g.last);
       }
       g.scrollFrame = requestAnimationFrame(tick);
     };

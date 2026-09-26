@@ -39,11 +39,16 @@ async function main() {
     raf = 0,
     unsaved = false,
     history = new P.History(25),
+    editValidator = new P.EditValidator(),
     recording = null,
     audioKind = "music",
     job = null,
     toastTimer,
-    autosaveTimer;
+    autosaveTimer,
+    listSignature,
+    inspectorSignature,
+    inspectorProject,
+    inspectorScene;
   const scene = () => project.scenes[index];
   const toast = (message) => {
     clearTimeout(toastTimer);
@@ -133,7 +138,7 @@ async function main() {
       autosaveTimer = setTimeout(() => {
         try {
           const tx = db.transaction("drafts", "readwrite");
-          tx.objectStore("drafts").put(P.clone(project), "latest");
+          tx.objectStore("drafts").put(project, "latest");
           tx.onerror = () => toast("草稿存储空间不足，请保存工程文件");
         } catch (e) {
           toast(e.message);
@@ -206,6 +211,19 @@ async function main() {
     $("#redoBtn").disabled = !history.future.length;
   }
   function renderList() {
+    const signature = JSON.stringify([
+      index,
+      project.scenes.map((s) => [
+        s.id,
+        s.name,
+        s.in,
+        s.out,
+        s.hold,
+        s.subtitles.length,
+      ]),
+    ]);
+    if (signature === listSignature) return;
+    listSignature = signature;
     $("#sceneCount").textContent = project.scenes.length + " 幕";
     $("#sceneList").innerHTML = project.scenes
       .map(
@@ -240,12 +258,17 @@ async function main() {
     if (selection.gesture) selection.gesture.cancel();
     timeline.cancel();
     pause();
-    const before = P.clone(project);
+    const before = P.snapshotProject(project);
+    const viewBefore = { index, time, tab, textId, subId };
     try {
       fn();
-      P.validateProject(project);
+      editValidator.validate(project);
+      if (rebuild) {
+        renderer.updateProject(project);
+        // Imported SVG registers text/object metadata during the rebuild.
+        editValidator.validate(project);
+      }
       history.push(before);
-      if (rebuild) renderer.load(project);
       index = Math.min(index, project.scenes.length - 1);
       unsaved = true;
       time = P.clamp(time, 0, P.duration(project) - 0.0001);
@@ -254,7 +277,8 @@ async function main() {
       return true;
     } catch (e) {
       project = before;
-      renderer.load(project);
+      ({ index, time, tab, textId, subId } = viewBefore);
+      renderer.updateProject(project);
       renderAll();
       toast(e.message);
       return false;
@@ -286,7 +310,7 @@ async function main() {
   $("#deleteSelection").onclick = deleteSelection;
   function recordGesture(before) {
     try {
-      P.validateProject(project);
+      editValidator.validate(project);
       history.push(before);
       unsaved = true;
       renderInspector();
@@ -294,7 +318,7 @@ async function main() {
       updateTransport();
     } catch (e) {
       project = before;
-      renderer.load(project);
+      renderer.updateProject(project);
       renderAll();
       toast(e.message);
     }
@@ -339,6 +363,38 @@ async function main() {
       .forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
     const pane = $("#inspector"),
       s = scene();
+    const data =
+      tab === "text"
+        ? [s.texts, s.subtitles, s.in, P.length(s)]
+        : tab === "object"
+          ? [s.objects, s.objectOverrides]
+          : tab === "scene"
+            ? [
+                s.name,
+                s.in,
+                s.out,
+                s.hold,
+                project.sources[s.sourceId].duration,
+              ]
+            : [project.audioTracks.map(({ dataUrl, ...a }) => a), !!recording];
+    const signature = JSON.stringify([
+      tab,
+      textId,
+      subId,
+      selection.ids,
+      selection.deep,
+      selection.scaleMode,
+      data,
+    ]);
+    if (
+      inspectorProject === project &&
+      inspectorScene === s &&
+      inspectorSignature === signature
+    )
+      return;
+    inspectorProject = project;
+    inspectorScene = s;
+    inspectorSignature = signature;
     if (tab === "text") {
       const tx = s.texts.find((t) => t.id === textId);
       pane.innerHTML = `<div class="section-title"><strong>画面文字 <span class="badge">${s.texts.length}</span></strong><button id="confirmText" title="确认当前全文">确认全文</button></div><input id="textSearch" class="search" placeholder="查找标注、标题、答案…" aria-label="查找画面文字"><div class="item-list" id="textList">${s.texts.map((t) => `<button class="item-button ${t.id === textId ? "active" : ""}" data-text-id="${esc(t.id)}">${esc(t.text)}</button>`).join("")}</div>${tx ? `<div class="field"><label for="editText">文字内容</label><textarea id="editText">${esc(tx.text)}</textarea></div><div class="row">${field("字号", "textSize", tx.size, "number", 'min="4" max="500"')}${field("换行宽度（0为不换行）", "textWidth", tx.width || 0)}</div><div class="row">${field("文字 X", "textX", tx.x)}${field("文字 Y", "textY", tx.y)}</div><div class="row"><div class="field"><label>字体</label><select id="textFont"><option value="KaiTi, STKaiti, serif">楷体</option><option value="Microsoft YaHei, sans-serif">微软雅黑</option><option value="SimSun, serif">宋体</option><option value="Arial, sans-serif">Arial</option></select></div>${field("颜色", "textColor", tx.fill, "color")}</div>` : '<p class="note">选择一段文字进行修改。图中标注、题目与答案也在此处。</p>'}<div class="section-title"><strong>本幕字幕</strong><span class="note">时间以本幕为起点</span></div>${s.subtitles.map((l, i) => `<div class="sub-card ${l.id === subId ? "selected" : ""}"><div class="row"><label>起 <input type="number" step=".1" min="0" data-sub-start="${i}" aria-label="字幕${i + 1}开始" value="${l.start.toFixed(2)}"></label><label>止 <input type="number" step=".1" data-sub-end="${i}" aria-label="字幕${i + 1}结束" value="${l.end.toFixed(2)}"></label></div><textarea data-caption="${i}" aria-label="字幕${i + 1}内容">${esc(l.text)}</textarea><div class="row"><button data-locate-sub="${i}">定位</button><button data-remove-sub="${i}" class="danger">删除字幕</button></div></div>`).join("")}`;
@@ -583,10 +639,12 @@ async function main() {
     let next = await migrateLegacy(candidate),
       before = project;
     try {
-      P.validateProject(next);
+      const nextValidator = new P.EditValidator();
+      nextValidator.validate(next);
       renderer.load(next);
       finishMigration(next);
       project = next;
+      editValidator = nextValidator;
       timeline.reset();
       index = 0;
       time = 0;
@@ -766,7 +824,7 @@ async function main() {
     index = Math.min(index, project.scenes.length - 1);
     selection.clear(false);
     textId = null;
-    renderer.load(project);
+    renderer.updateProject(project);
     unsaved = true;
     renderAll();
     selection.set(previousSelection);
@@ -842,7 +900,7 @@ async function main() {
         e.target.files[0].name.replace(/\.svg$/i, ""),
       );
       const changed = change(() => {
-        Object.assign(project.sources, p.sources);
+        project.sources = { ...project.sources, ...p.sources };
         project.scenes.push(...p.scenes);
         index = project.scenes.length - 1;
         time = P.sceneStart(project, index);
@@ -949,6 +1007,9 @@ async function main() {
     pause();
     $("#exportDialog").showModal();
   };
+  $("#exportType").onchange = () => {
+    $("#exportModeField").hidden = $("#exportType").value !== "mp4";
+  };
   $("#startExport").onclick = async () => {
     try {
       P.validateProject(project);
@@ -969,6 +1030,7 @@ async function main() {
         return;
       }
       body.width = +$("#exportSize").value;
+      body.exportMode = $("#exportMode").value;
       body.start =
         $("#exportRange").value === "scene" ? P.sceneStart(project, index) : 0;
       body.end =
@@ -1001,7 +1063,9 @@ async function main() {
         d = await r.json();
       if (!r.ok) throw Error(d.error || "导出任务已失效");
       $("#exportProgress").value = d.progress || 0;
-      $("#exportStatus").textContent = d.message || "正在渲染";
+      $("#exportStatus").textContent =
+        (d.message || "正在渲染") +
+        (d.fallbackReason ? " · " + d.fallbackReason : "");
       if (["complete", "failed", "cancelled"].includes(d.status)) {
         $("#cancelExport").hidden = true;
         $("#startExport").disabled = false;

@@ -19,4 +19,6 @@ with sync_playwright() as pw:
     p.mouse.move(x,y);p.mouse.down();p.mouse.move(x+24,y+12,steps=4);p.mouse.up()
     overrides=p.evaluate('Object.values(studio.getProject().scenes[0].objectOverrides)')
     assert len(overrides)==1 and overrides[0]['dx']>0 and overrides[0]['dy']>0,overrides
-    b.close();print('SVG styles, source ID isolation, and multiline text: passed')
+    result=p.evaluate('''async()=>{const {svgProject}=await import('./src/renderer.mjs');const {snapshotProject}=await import('./src/project.mjs');await studio.loadProject(svgProject('<svg xmlns="http://www.w3.org/2000/svg"><text x="10 100 200" y="30 40 50" font-size="24">ABC</text></svg>'));const renderer=studio.renderer,old=snapshotProject(renderer.project);const id=old.scenes[0].texts[0].objectId;const initial=[renderer.node(id).getAttribute('x'),renderer.node(id).getAttribute('y')];renderer.project.scenes[0].texts[0].text='XYZ';renderer.render(1);renderer.updateProject(old);renderer.render(1);return{initial,restored:[renderer.node(id).getAttribute('x'),renderer.node(id).getAttribute('y')]};}''')
+    assert result['initial']==result['restored'],result
+    b.close();print('SVG styles, source ID isolation, multiline and coordinate-list restoration: passed')

@@ -26,9 +26,10 @@
     <script type="module">
       import { Renderer } from "./src/renderer.mjs";
       import { validateProject, frameCount } from "./src/project.mjs";
+      import { FastExporter } from "./src/fast-export.mjs";
       const id = new URLSearchParams(location.search).get("job");
       const response = await fetch(
-        "/api/exports/" + encodeURIComponent(id) + "/project",
+        "/api/exports/" + encodeURIComponent(id) + "/project?visual=1",
       );
       if (!response.ok) throw Error("导出工程不存在");
       const project = await response.json();
@@ -41,6 +42,9 @@
         frameCount: (seconds) => frameCount(seconds, project.canvas.fps),
         render: (t) => renderer.render(t),
         snapshot: () => renderer.snapshot(),
+        fast: new FastExporter(renderer, async () =>
+          globalThis.prismCancelled ? await globalThis.prismCancelled() : false,
+        ),
       };
     </script>
   </body>

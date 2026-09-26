@@ -60,7 +60,7 @@ def main():
         if len(raw)>160*1024*1024:raise ValueError('输入超过160 MiB')
         project=json.loads(raw.decode('utf-8-sig'))
         with urllib.request.urlopen(url+'/api/health',timeout=5) as response:health=json.load(response)
-        if health.get('version')!='0.3.0':raise ValueError('请启动0.3.0工作台服务后校验')
+        if '0.3.0' not in health.get('schemaVersions',[]) and health.get('version')!='0.3.0':raise ValueError('请启动支持SVGFilm 0.3的工作台服务后校验')
         from playwright.sync_api import sync_playwright
         with sync_playwright() as pw:
             browser=pw.chromium.launch(headless=True,**({} if args.browser=='chromium' else {'channel':args.browser}))

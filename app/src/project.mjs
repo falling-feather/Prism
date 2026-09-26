@@ -3,6 +3,87 @@ import { validateAnimations, SVG_ID } from "./animation.mjs";
 export const VERSION = "0.3.0";
 export const READABLE_VERSIONS = ["0.2.0", VERSION];
 export const clone = (x) => structuredClone(x);
+const frozenSources = new WeakSet();
+const jsonBytes = (value) =>
+  new TextEncoder().encode(JSON.stringify(value)).byteLength;
+export function freezeSources(value) {
+  if (!value || typeof value !== "object" || frozenSources.has(value))
+    return value;
+  frozenSources.add(value);
+  for (const child of Object.values(value)) freezeSources(child);
+  return Object.freeze(value);
+}
+/** Edit snapshots copy metadata, while immutable source assets and audio strings are shared. */
+export function snapshotProject(project) {
+  // Replacing values before cloning also preserves JSON field order across undo.
+  const snapshot = clone({
+    ...project,
+    sources: null,
+    audioTracks: project.audioTracks.map((track) => ({
+      ...track,
+      dataUrl: null,
+    })),
+  });
+  snapshot.sources = freezeSources(project.sources);
+  snapshot.audioTracks.forEach((track, i) => {
+    track.dataUrl = project.audioTracks[i].dataUrl;
+  });
+  return snapshot;
+}
+export class EditValidator {
+  constructor() {
+    this.sources = null;
+    this.sourceVersion = null;
+    this.sourceBytes = 0;
+    this.audio = new Map();
+  }
+  sourcesValid(p) {
+    return this.sources === p.sources && this.sourceVersion === p.schemaVersion;
+  }
+  rememberSources(p) {
+    this.sources = p.sources;
+    this.sourceVersion = p.schemaVersion;
+    this.sourceBytes = jsonBytes(p.sources);
+  }
+  hasAudio(url) {
+    return this.audio.has(url);
+  }
+  rememberAudio(url) {
+    this.nextAudio.set(url, this.audio.get(url) ?? jsonBytes(url));
+  }
+  byteLength(p) {
+    const metadata = {
+      ...p,
+      sources: null,
+      audioTracks: p.audioTracks.map((a) => ({ ...a, dataUrl: "" })),
+    };
+    return (
+      jsonBytes(metadata) +
+      (this.sources === p.sources ? this.sourceBytes : jsonBytes(p.sources)) -
+      4 +
+      p.audioTracks.reduce(
+        (n, a) =>
+          n +
+          (this.nextAudio?.get(a.dataUrl) ??
+            this.audio.get(a.dataUrl) ??
+            jsonBytes(a.dataUrl)) -
+          2,
+        0,
+      )
+    );
+  }
+  validate(p) {
+    freezeSources(p.sources);
+    this.nextAudio = new Map();
+    try {
+      validateProject(p, this);
+      this.audio = this.nextAudio;
+      return p;
+    } finally {
+      this.nextAudio = null;
+    }
+  }
+}
 export const uid = (prefix = "id") => `${prefix}-${crypto.randomUUID()}`;
 export const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 // Ignore sub-nanosecond arithmetic noise when comparing edited time boundaries.
@@ -42,16 +123,13 @@ function unique(items, label) {
   )
     throw Error(`${label}编号缺失或重复`);
 }
-export function validateProject(p) {
+export function validateProject(p, cache = null) {
   if (
     p?.schema !== "svgfilm-project" ||
     !READABLE_VERSIONS.includes(p.schemaVersion)
   )
     throw Error("不是支持的 SVGFilm 0.2／0.3 工程");
-  if (
-    new TextEncoder().encode(JSON.stringify(p)).byteLength >
-    120 * 1024 * 1024
-  )
+  if (!cache && jsonBytes(p) > 120 * 1024 * 1024)
     throw Error("工程超过 120 MB，请缩短或压缩音频后再导入；当前编辑保持不变");
   if (!Array.isArray(p.scenes) || p.scenes.length < 1 || p.scenes.length > 500)
     throw Error("工程须有 1–500 个镜头");
@@ -61,27 +139,30 @@ export function validateProject(p) {
   unique(p.scenes, "镜头");
   if (!p.sources || typeof p.sources !== "object" || Array.isArray(p.sources))
     throw Error("缺少素材来源");
-  for (const [id, src] of Object.entries(p.sources)) {
-    if (
-      !src ||
-      !["svg", "cell-native-v1", "svg-keyframes-v1"].includes(src.type)
-    )
-      throw Error("不支持的来源渲染器");
-    finite(src.duration, "来源时长", 0.01, 7200);
-    if (src.type === "svg" || src.type === "svg-keyframes-v1") {
-      if (typeof src.svg !== "string" || !src.svg.includes("<svg"))
-        throw Error("缺少 SVG 来源内容");
+  if (!cache?.sourcesValid(p)) {
+    for (const [id, src] of Object.entries(p.sources)) {
+      if (
+        !src ||
+        !["svg", "cell-native-v1", "svg-keyframes-v1"].includes(src.type)
+      )
+        throw Error("不支持的来源渲染器");
+      finite(src.duration, "来源时长", 0.01, 7200);
+      if (src.type === "svg" || src.type === "svg-keyframes-v1") {
+        if (typeof src.svg !== "string" || !src.svg.includes("<svg"))
+          throw Error("缺少 SVG 来源内容");
+      }
+      if (src.type === "svg-keyframes-v1") {
+        if (p.schemaVersion !== VERSION)
+          throw Error("通用动画来源要求 SVGFilm 0.3.0");
+        if (!SVG_ID.test(id))
+          throw Error(
+            "动画 sourceId 须以字母开头，仅含字母数字下划线和连字符，最多96字符",
+          );
+        validateAnimations(src);
+      } else if (src.animations !== undefined)
+        throw Error("animations 仅适用于 svg-keyframes-v1 来源");
     }
-    if (src.type === "svg-keyframes-v1") {
-      if (p.schemaVersion !== VERSION)
-        throw Error("通用动画来源要求 SVGFilm 0.3.0");
-      if (!SVG_ID.test(id))
-        throw Error(
-          "动画 sourceId 须以字母开头，仅含字母数字下划线和连字符，最多96字符",
-        );
-      validateAnimations(src);
-    } else if (src.animations !== undefined)
-      throw Error("animations 仅适用于 svg-keyframes-v1 来源");
+    cache?.rememberSources(p);
   }
   for (const s of p.scenes) {
     const src = p.sources[s.sourceId];
@@ -131,9 +212,11 @@ export function validateProject(p) {
   unique(p.audioTracks, "音轨");
   for (const a of p.audioTracks) {
     if (
+      !cache?.hasAudio(a.dataUrl) &&
       !/^data:audio\/[\w.+-]+;base64,[A-Za-z0-9+/=\r\n]+$/.test(a.dataUrl || "")
     )
       throw Error("音频素材须完整包含在工程内");
+    cache?.rememberAudio(a.dataUrl);
     finite(a.start, "音轨开始", 0, 7200);
     finite(a.offset || 0, "音频源起点", 0, 7200);
     finite(a.duration, "音轨长度", 0.01, 7200);
@@ -146,6 +229,8 @@ export function validateProject(p) {
     )
       throw Error("音轨超出源音频范围");
   }
+  if (cache && cache.byteLength(p) > 120 * 1024 * 1024)
+    throw Error("工程超过 120 MB，请缩短或压缩音频后再导入；当前编辑保持不变");
   return p;
 }
 export function serializeProject(p) {
@@ -308,18 +393,18 @@ export class History {
     this.limit = limit;
   }
   push(p) {
-    this.past.push(clone(p));
+    this.past.push(snapshotProject(p));
     if (this.past.length > this.limit) this.past.shift();
     this.future = [];
   }
   undo(p) {
     if (!this.past.length) return p;
-    this.future.push(clone(p));
+    this.future.push(snapshotProject(p));
     return this.past.pop();
   }
   redo(p) {
     if (!this.future.length) return p;
-    this.past.push(clone(p));
+    this.past.push(snapshotProject(p));
     return this.future.pop();
   }
 }

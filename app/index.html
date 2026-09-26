@@ -10,10 +10,7 @@
     <header>
       <div class="brand">
         <span class="brand-icon">▱</span>
-        <div>
-          <strong>映物 · Prism</strong
-          ><small>把道理，映成画面</small>
-        </div>
+        <div><strong>映物 · Prism</strong><small>把道理，映成画面</small></div>
       </div>
       <div class="project-title">
         <input id="projectTitle" aria-label="视频名称" /><span id="saveState"
@@ -314,6 +311,17 @@
         </div>
       </div>
       <progress id="exportProgress" max="100" value="0" hidden></progress>
+      <div class="field" id="exportModeField">
+        <label for="exportMode">导出方式</label
+        ><select id="exportMode">
+          <option value="auto">自动加速（推荐）</option>
+          <option value="fast">快速导出</option>
+          <option value="compatibility">兼容导出</option>
+        </select>
+        <p class="note">
+          快速模式可能有细微字体抗锯齿差异。自动模式遇到暂不支持的效果时切换兼容方式，并显示原因。
+        </p>
+      </div>
       <p id="exportStatus"></p>
       <div class="dialog-actions">
         <button id="cancelExport" hidden>取消导出</button

@@ -1,4 +1,4 @@
-# 映物 Prism · 教师视频编辑器 v0.3
+# 映物 Prism · 教师视频编辑器 v0.3.1
 
 ## 打开工作台
 
@@ -15,6 +15,10 @@
 5. **声音**：上传音乐／配音或主动录音；调整全片起点、音频源入点、长度、音量和淡入淡出。音轨位置使用全片时间，镜头剪辑不自动改动音轨起点。
 6. **保存工程**：得到包含 SVG 素材、文字、剪辑和音频的 .svgfilm.json；重新导入恢复修改。总工程预算 120 MiB，超限编辑会被拒绝并保留之前状态。
 7. **导出视频**：选择当前镜头或全片、720p或1080p；生成MP4后点击下载。可取消进行中的导出。HTML导出总是包含全片，可以离线播放并再次导入编辑。
+
+MP4增加三种导出方式：**自动加速**默认用于日常导出，少于90帧的短片采用兼容方式以减少启动开销；**快速导出**使用浏览器视频编码，存在细微字体抗锯齿差异；**兼容导出**使用原来的DOM截图方式。自动模式遇到不支持的编码配置或滤镜、遮罩、图案等效果时会明确提示并切换兼容方式。快速模式失败会显示错误，仍可手动选择兼容。音频混合、帧率和工程格式保持一致。
+
+快速导出分批排空编码数据，最多4个待编码请求，单批编码数据上限16 MiB。编辑撤销共享不可变素材，普通编辑复用素材校验结果；修改后只刷新有变化的面板，播放头连续拖动按屏幕刷新合并。性能数据和适用边界见[优化记录](../docs/05-性能优化方案.md)。
 
 空格播放／暂停，左右方向键逐帧，Ctrl+Z撤销，Ctrl+Shift+Z重做。编辑会在本浏览器保存草稿，可通过“恢复上次草稿”恢复；下载工程仍是跨电脑保存的方式。
 
@@ -73,6 +77,10 @@ node --test tests/project.test.mjs
 node --test tests/selection.test.mjs
 node --test tests/timeline.test.mjs
 node --test tests/animation.test.mjs
+node --test tests/edit_state.test.mjs tests/fast_export.test.mjs
+.venv/Scripts/python.exe -X utf8 tests/edit_performance_browser.py
+.venv/Scripts/python.exe -X utf8 tests/fast_export.py
+.venv/Scripts/python.exe -X utf8 tests/fast_visual.py
 .venv/Scripts/python.exe -X utf8 tests/animation_browser.py
 .venv/Scripts/python.exe -X utf8 tests/animation_export.py
 .venv/Scripts/python.exe -X utf8 tests/protocol_checker.py
