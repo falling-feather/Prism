@@ -34,13 +34,14 @@
       if (!response.ok) throw Error("导出工程不存在");
       const project = await response.json();
       validateProject(project);
-      const renderer = new Renderer(document.querySelector("#stage"));
+      const renderer = new Renderer(document.querySelector("#stage"), {outputWidth:window.innerWidth});
       renderer.load(project);
+      await renderer.whenReady();
       await document.fonts.ready;
       window.exporter = {
         ready: true,
         frameCount: (seconds) => frameCount(seconds, project.canvas.fps),
-        render: (t) => renderer.render(t),
+        render: (t) => renderer.renderAsync(t),
         snapshot: () => renderer.snapshot(),
         fast: new FastExporter(renderer, async () =>
           globalThis.prismCancelled ? await globalThis.prismCancelled() : false,

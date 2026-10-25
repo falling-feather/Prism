@@ -7,6 +7,7 @@ const project = JSON.parse(
   renderer = new Renderer(document.querySelector("#stage")),
   audio = new AudioPlayer();
 renderer.load(project);
+await renderer.whenReady();
 let playing = false,
   time = 0,
   last = 0,
@@ -16,6 +17,14 @@ function stop() {
   audio.pause();
   cancelAnimationFrame(frame);
 }
+renderer.svg.addEventListener("render-error", (event) => {
+  stop();
+  const message = document.createElement("p");
+  message.textContent = event.detail.message;
+  message.style.cssText =
+    "position:fixed;bottom:0;left:0;right:0;color:white;background:#6e2828;padding:12px";
+  document.body.append(message);
+});
 function tick(now) {
   if (!playing) return;
   time += (now - last) / 1000;
@@ -24,7 +33,7 @@ function tick(now) {
     time = duration(project) - 0.00001;
     stop();
   }
-  renderer.render(time);
+  renderer.render(time, { presentIntermediate: true });
   audio.sync(project, time, playing);
   if (playing) frame = requestAnimationFrame(tick);
 }
@@ -62,3 +71,4 @@ document.addEventListener("keydown", (e) => {
     toggle();
   }
 });
+document.documentElement.dataset.prismReady = "true";

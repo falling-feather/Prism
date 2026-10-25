@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@babel/parser": "7.28.5",
+    "@babel/traverse": "7.28.5",
+    "@babel/generator": "7.28.5",
+    "@babel/types": "7.28.5",
+    "esbuild": "0.25.11",
+    "@jridgewell/trace-mapping": "0.3.31"
+  }
+}

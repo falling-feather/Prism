@@ -6,218 +6,30 @@ import {
   READABLE_VERSIONS,
   validateProject,
 } from "./project.mjs";
-import { sampleAnimation } from "./animation.mjs";
-import { validateSvgContract, validateCatalog } from "./svg-contract.mjs";
-const NS = "http://www.w3.org/2000/svg";
-export const element = (tag, attrs = {}, parent) => {
-  const e = document.createElementNS(NS, tag);
-  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
-  parent?.append(e);
-  return e;
-};
-const attr = (e, k, fallback) => Number(e.getAttribute(k) || fallback);
-const measure = document.createElement("canvas").getContext("2d");
-function wrap(text, size, font, width) {
-  measure.font = `${size}px ${font}`;
-  return text.split("\n").flatMap((line) => {
-    if (!width) return [line];
-    const lines = [];
-    let row = "";
-    for (const c of line) {
-      if (row && measure.measureText(row + c).width > width) {
-        lines.push(row);
-        row = "";
-      }
-      row += c;
-    }
-    lines.push(row);
-    return lines;
-  });
-}
-const textSignature = (t) =>
-  JSON.stringify([
-    t.text,
-    t.x,
-    t.y,
-    t.size,
-    t.font || "KaiTi, STKaiti, serif",
-    t.width || 0,
-    t.fill || "#252720",
-    t.anchor || "start",
-  ]);
-function paintText(e, t, template) {
-  const signature = textSignature(t);
-  if (e.dataset.signature === signature) return;
-  const font = t.font || "KaiTi, STKaiti, serif";
-  e.setAttribute("x", t.x);
-  e.setAttribute("y", t.y);
-  e.setAttribute("font-size", t.size);
-  e.setAttribute("font-family", font);
-  e.setAttribute("fill", t.fill || "#252720");
-  e.setAttribute("text-anchor", t.anchor || "start");
-  Object.assign(e.style, {
-    fontSize: t.size + "px",
-    fontFamily: font,
-    fill: t.fill || "#252720",
-    textAnchor: t.anchor || "start",
-  });
-  e.dataset.signature = signature;
-  if (template?.signature === signature) {
-    for (const key of ["x", "y"]) {
-      if (template.position[key] === null) e.removeAttribute(key);
-      else e.setAttribute(key, template.position[key]);
-    }
-    e.replaceChildren(...template.children.map((n) => n.cloneNode(true)));
-    return;
-  }
-  e.replaceChildren();
-  wrap(t.text, t.size, font, t.width).forEach((row, i) => {
-    element("tspan", { x: t.x, dy: i ? t.size * 1.3 : 0 }, e).textContent = row;
-  });
-}
-function sourceText(e) {
-  let text = "",
-    baseline = Number(e.getAttribute("y") || 0);
-  for (const n of e.childNodes) {
-    if (n.nodeType === 3) {
-      if (n.textContent.trim() || !/[\n\r\t]/.test(n.textContent))
-        text += n.textContent;
-      continue;
-    }
-    const dy = parseFloat(n.getAttribute?.("dy") || 0),
-      y = n.hasAttribute?.("y")
-        ? parseFloat(n.getAttribute("y"))
-        : baseline + dy;
-    if (
-      text &&
-      y > baseline + 1 &&
-      (n.hasAttribute?.("x") || y - baseline > 10)
-    )
-      text += "\n";
-    text += n.textContent;
-    baseline = y;
-  }
-  return text;
-}
-export function sanitizeSvg(markup, scope = uid("svg"), stableIds = false) {
-  const prefix = `svf-${scope.length}-${scope}`,
-    rootScope = stableIds ? `${prefix}-root` : scope;
-  const doc = new DOMParser().parseFromString(markup, "image/svg+xml");
-  if (
-    doc.querySelector("parsererror") ||
-    doc.documentElement.localName !== "svg"
-  )
-    throw Error("SVG 文件无法解析");
-  const svg = doc.documentElement;
-  svg
-    .querySelectorAll(
-      "script,foreignObject,iframe,object,embed,animate,animateMotion,animateTransform,set,audio,video",
-    )
-    .forEach((e) => e.remove());
-  const idMap = new Map();
-  for (const [e, i] of [svg, ...svg.querySelectorAll("[id]")].map((e, i) => [
-    e,
-    i,
-  ])) {
-    if (e.id) {
-      if (idMap.has(e.id)) throw Error("SVG 内存在重复编号");
-      idMap.set(
-        e.id,
-        i
-          ? stableIds
-            ? `${prefix}-node-${e.id}`
-            : `${scope}-ref${i}`
-          : rootScope,
-      );
-      e.setAttribute(
-        "data-original-id",
-        e.getAttribute("data-original-id") || e.id,
-      );
-    }
-    if (e.id || e === svg) e.id = i ? idMap.get(e.id) : rootScope;
-  }
-  const replaceUrls = (v) =>
-    v.replace(
-      /url\(\s*(['"]?)#([^'"\s)]+)\1\s*\)/g,
-      (_, quote, id) => `url(#${idMap.get(id) || id})`,
-    );
-  const entries = [...idMap].sort((a, b) => b[0].length - a[0].length),
-    reEscape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const replaceSelectors = (selector) => {
-    entries.forEach(([old], i) => {
-      selector = selector.replace(
-        new RegExp("#" + reEscape(CSS.escape(old)) + "(?![\\w-])", "g"),
-        () => `\u0001${i}\u0002`,
-      );
-    });
-    return selector.replace(
-      /\u0001(\d+)\u0002/g,
-      (_, i) => "#" + CSS.escape(entries[+i][1]),
-    );
-  };
-  const safeValue = (v) =>
-    !/(?:javascript:|https?:|data:|@import|expression\s*\()/i.test(v) &&
-    (!/url\(/i.test(v) || /^url\(\s*['"]?#[\w:.-]+['"]?\s*\)$/.test(v));
-  const allowed = new Set(
-    "fill fill-opacity fill-rule stroke stroke-width stroke-opacity stroke-linecap stroke-linejoin stroke-dasharray stroke-dashoffset opacity display visibility color font-family font-size font-weight font-style text-anchor letter-spacing dominant-baseline paint-order vector-effect transform transform-origin".split(
-      " ",
-    ),
-  );
-  const cleanStyle = (style) =>
-    [...style]
-      .filter((k) => allowed.has(k) && safeValue(style.getPropertyValue(k)))
-      .map((k) => `${k}:${replaceUrls(style.getPropertyValue(k))}`)
-      .join(";");
-  for (const style of [...svg.querySelectorAll("style")]) {
-    const sheet = new CSSStyleSheet();
-    sheet.replaceSync(style.textContent);
-    style.textContent = [...sheet.cssRules]
-      .filter((r) => r.type === CSSRule.STYLE_RULE)
-      .map((r) => {
-        const declarations = cleanStyle(r.style),
-          selector = replaceSelectors(r.selectorText);
-        return declarations
-          ? `:where(#${CSS.escape(rootScope)}):is(${selector}),:where(#${CSS.escape(rootScope)}) :is(${selector}){${declarations}}`
-          : "";
-      })
-      .join("\n");
-  }
-  for (const e of [svg, ...svg.querySelectorAll("*")])
-    for (const a of [...e.attributes]) {
-      const k = a.name.toLowerCase(),
-        v = a.value;
-      if (k === "style") {
-        e.setAttribute("style", cleanStyle(e.style));
-        continue;
-      }
-      if (
-        k.startsWith("on") ||
-        (k.endsWith("href") &&
-          !v.startsWith("#") &&
-          !/^data:image\/(png|jpeg|webp);base64,/.test(v)) ||
-        (/url\(/i.test(v) && !safeValue(v))
-      ) {
-        e.removeAttribute(a.name);
-        continue;
-      }
-      if (k.endsWith("href") && v.startsWith("#"))
-        e.setAttribute(a.name, "#" + (idMap.get(v.slice(1)) || v.slice(1)));
-      else if (/url\(/i.test(v)) e.setAttribute(a.name, replaceUrls(v));
-    }
-  svg.removeAttribute("width");
-  svg.removeAttribute("height");
-  return new XMLSerializer().serializeToString(svg);
-}
+import { createSourceAdapter } from "./adapter-registry.mjs";
+import {
+  NS,
+  element,
+  attr,
+  wrap,
+  paintText,
+  sanitizeSvg,
+} from "./svg-utils.mjs";
+export { element, sanitizeSvg } from "./svg-utils.mjs";
 export class Renderer {
-  constructor(svg) {
+  constructor(svg, options = {}) {
     this.svg = svg;
+    this.options = options;
     this.sources = new Map();
     this.project = null;
   }
   load(project) {
     validateProject(project);
+    for (const adapter of this.sources.values()) adapter.dispose?.();
+    this.frameToken = (this.frameToken || 0) + 1;
     this.project = project;
     this.loadedSources = project.sources;
+    this.loadedResources = project.resources;
     this.loadedCanvas = JSON.stringify([
       project.canvas.width,
       project.canvas.height,
@@ -242,190 +54,21 @@ export class Renderer {
     );
     this.sources = new Map();
     for (const [id, source] of Object.entries(project.sources)) {
-      const animated = source.type === "svg-keyframes-v1";
-      if (animated) validateSvgContract(source, project.canvas);
       const host = element("g", { "data-source-id": id }, this.svg);
-      let api = null,
-        texts = [],
-        objects = [];
-      const textTemplates = new Map();
-      if (source.type === "cell-native-v1") {
-        api = globalThis.PaperArt.create(host, {});
-        api.setScene(id);
-        globalThis.CellScenes.build(api, source.scene, host, {
-          scenes: [source.scene],
-        });
-        api.render(id, source.duration * 0.6, source.duration * 0.6);
-        texts = clone(api.textCatalog);
-        objects = clone(api.objectCatalog);
-        const ground = element(
-          "path",
-          {
-            "data-ground": "1",
-            fill: "none",
-            stroke: "#252720",
-            "stroke-width": 1.9,
-          },
-          host,
-        );
-      } else {
-        const nested = new DOMParser().parseFromString(
-          sanitizeSvg(source.svg, id, animated),
-          "image/svg+xml",
-        ).documentElement;
-        host.append(document.importNode(nested, true));
-        const inserted = host.querySelector("svg");
-        inserted.setAttribute("width", "100%");
-        inserted.setAttribute("height", "100%");
-        // Outlined legacy text retains its source string; convert it once for real editing.
-        host.querySelectorAll("[data-text]").forEach((g) => {
-          if (g.querySelector("text")) return;
-          const u = g.querySelector("use"),
-            m = u
-              ?.getAttribute("transform")
-              ?.match(/translate\(([-.\d]+)[ ,]+([-.\d]+)\).*scale\(([-.\d]+)/);
-          if (!m) return;
-          const text = g.getAttribute("data-text");
-          g.replaceChildren();
-          element(
-            "text",
-            { x: m[1], y: m[2], "font-size": Math.abs(+m[3]) * 1000 },
-            g,
-          ).textContent = text;
-        });
-        let k = 0;
-        const candidates = [
-          ...host.querySelectorAll(
-            animated
-              ? "g[id],text,rect,circle,ellipse,path,polygon,polyline,line,image,use"
-              : "[data-object],g[id],text,rect,circle,ellipse,path,polygon,polyline,line,image,use",
-          ),
-        ].filter((e) => !e.closest("defs,clipPath,mask,marker,pattern,filter"));
-        for (const e of candidates) {
-          const oid = animated
-            ? `${id}:o:${e.getAttribute("data-original-id")}`
-            : `${id}:o${k++}`;
-          e.setAttribute("data-node-id", oid);
-          objects.push({
-            id: oid,
-            label:
-              e.getAttribute("data-object") ||
-              e.getAttribute("data-original-id") ||
-              e.id ||
-              e.textContent?.slice(0, 20) ||
-              e.localName,
-            parentId:
-              e.parentElement
-                .closest("[data-node-id]")
-                ?.getAttribute("data-node-id") || null,
-          });
-        }
-        [...host.querySelectorAll("text")].forEach((e, i) => {
-          const tid = animated
-              ? `${id}:t:${e.getAttribute("data-original-id")}`
-              : `${id}:t${i}`,
-            style = getComputedStyle(e),
-            rgb = style.fill.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/),
-            fill = rgb
-              ? "#" +
-                rgb
-                  .slice(1)
-                  .map((v) => (+v).toString(16).padStart(2, "0"))
-                  .join("")
-              : style.fill;
-          e.setAttribute("data-text-id", tid);
-          e.setAttribute("data-content", "1");
-          const meta = {
-            id: tid,
-            objectId: e.getAttribute("data-node-id"),
-            text: sourceText(e),
-            x: e.x.baseVal.numberOfItems ? e.x.baseVal.getItem(0).value : 0,
-            y: e.y.baseVal.numberOfItems ? e.y.baseVal.getItem(0).value : 0,
-            size: parseFloat(style.fontSize) || 24,
-            font: style.fontFamily,
-            fill,
-            anchor: style.textAnchor || "start",
-            width: 0,
-            start: 0,
-            end: 1e9,
-          };
-          e.dataset.signature = textSignature(meta);
-          textTemplates.set(tid, {
-            signature: e.dataset.signature,
-            position: { x: e.getAttribute("x"), y: e.getAttribute("y") },
-            children: [...e.childNodes].map((n) => n.cloneNode(true)),
-          });
-          texts.push(meta);
-        });
-      }
-      const nodes = new Map(),
-        wrappers = new Map(),
-        motions = [];
-      const animations = new Map(
-        (source.animations || []).map((a) => [`${id}:o:${a.target}`, a]),
-      );
-      for (const o of objects) {
-        const node = host.querySelector(`[data-node-id="${CSS.escape(o.id)}"]`);
-        if (!node) continue;
-        nodes.set(o.id, node);
-        let b = node.getBBox();
-        const matrix = node.transform?.baseVal?.consolidate()?.matrix;
-        let center = new DOMPoint(b.x + b.width / 2, b.y + b.height / 2);
-        if (matrix) center = center.matrixTransform(matrix);
-        o.cx = center.x;
-        o.cy = center.y;
-        const w = element("g", { "data-layout-id": o.id });
-        node.before(w);
-        const animation = animations.get(o.id);
-        if (animation) {
-          const motion = element(
-            "g",
-            { "data-motion-id": animation.target },
-            w,
-          );
-          motion.append(node);
-          motions.push({ node: motion, animation });
-        } else w.append(node);
-        wrappers.set(o.id, w);
-      }
-      this.sources.set(id, {
-        host,
-        api,
-        texts,
-        objects,
-        nodes,
-        wrappers,
-        textTemplates,
-        motions,
-        ground: host.querySelector("[data-ground]"),
-        appliedOverrides: new Map(),
-        textNodes: new Map(
-          texts.map((t) => {
-            const group = host.querySelector(
-              `[data-text-id="${CSS.escape(t.id)}"]`,
-            );
-            return [
-              t.id,
-              {
-                group,
-                content: group?.matches("text")
-                  ? group
-                  : group?.querySelector("[data-content]"),
-              },
-            ];
-          }),
-        ),
-      });
+      const adapter = createSourceAdapter(id, source, host, project);
+      this.sources.set(id, adapter);
       host.style.display = "none";
     }
     this.captionLayer = element("g", { "data-layer": "captions" }, this.svg);
     // Freshly imported legacy/native projects receive the complete renderer-derived registry.
     for (const s of project.scenes) {
       const catalog = this.sources.get(s.sourceId);
-      if (project.sources[s.sourceId].type === "svg-keyframes-v1")
-        validateCatalog(s, catalog);
-      if (!s.texts.length) s.texts = clone(catalog.texts);
-      if (!s.objects.length) s.objects = clone(catalog.objects);
+      catalog.validateScene?.(s);
+      if (catalog.syncCatalog) catalog.syncCatalog(s);
+      else {
+        if (!s.texts.length) s.texts = clone(catalog.texts);
+        if (!s.objects.length) s.objects = clone(catalog.objects);
+      }
       s.objectOverrides ??= {};
     }
     this.render(0);
@@ -433,6 +76,7 @@ export class Renderer {
   updateProject(project) {
     if (
       this.loadedSources !== project.sources ||
+      this.loadedResources !== project.resources ||
       this.loadedCanvas !==
         JSON.stringify([
           project.canvas.width,
@@ -443,34 +87,21 @@ export class Renderer {
       this.load(project);
     else this.project = project;
   }
-  render(time) {
+  render(time, options = {}) {
     const p = this.project,
       pos = locate(p, time);
     if (!pos) return;
     const s = pos.scene,
       src = this.sources.get(s.sourceId);
+    src.syncCatalog?.(s);
     if (this.activeSource !== src) {
+      this.activeSource?.deactivate?.();
       for (const v of this.sources.values())
         v.host.style.display = v === src ? "" : "none";
       this.activeSource = src;
     }
-    src.api?.render(s.sourceId, pos.sourceTime, pos.sourceTime);
-    for (const { node, animation } of src.motions) {
-      const a = sampleAnimation(animation, pos.sourceTime),
-        [cx, cy] = animation.origin || [0, 0];
-      node.setAttribute(
-        "transform",
-        `translate(${a.x} ${a.y}) translate(${cx} ${cy}) rotate(${a.rotation}) scale(${a.scale}) translate(${-cx} ${-cy})`,
-      );
-      node.setAttribute("opacity", a.opacity);
-    }
-    const ground = src.ground;
-    if (ground) {
-      let d = `M0 ${M.ground(0, pos.sourceTime)}`;
-      for (let x = 32; x <= 1280; x += 32)
-        d += ` L${x} ${M.ground(x, pos.sourceTime)}`;
-      ground.setAttribute("d", d);
-    }
+    const rendering = src.renderSource(s, pos.sourceTime, {...this.options,...options});
+    this.track(rendering);
     for (const o of s.objects) {
       const w = src.wrappers.get(o.id),
         ov = s.objectOverrides[o.id] || {};
@@ -491,17 +122,6 @@ export class Renderer {
         "transform",
         `translate(${ov.dx || 0} ${ov.dy || 0}) translate(${o.cx || 0} ${o.cy || 0}) rotate(${ov.rotation || 0}) scale(${ov.scale ?? 1}) translate(${-o.cx || 0} ${-o.cy || 0})`,
       );
-    }
-    for (const t of s.texts) {
-      const { group, content: e } = src.textNodes.get(t.id) || {};
-      if (!e) continue;
-      paintText(e, t, src.textTemplates.get(t.id));
-      if (!src.api)
-        group.style.visibility =
-          pos.sourceTime >= t.start && pos.sourceTime < t.end
-            ? "visible"
-            : "hidden";
-      group.setAttribute("data-source-text", t.text);
     }
     const visible = s.subtitles.filter(
       (l) => pos.local >= l.start && pos.local < l.end,
@@ -555,8 +175,48 @@ export class Renderer {
   wrapper(id) {
     return this.sources.get(this.position.scene.sourceId)?.wrappers.get(id);
   }
+  track(rendering) {
+    const token = (this.frameToken = (this.frameToken || 0) + 1);
+    this.pending = Promise.resolve(rendering).then(
+      () => {
+        if (token === this.frameToken)
+          this.svg.dispatchEvent(new CustomEvent("render-ready"));
+      },
+      (error) => {
+        if (token !== this.frameToken) return;
+        this.svg.dispatchEvent(
+          new CustomEvent("render-error", { detail: error }),
+        );
+        throw error;
+      },
+    );
+    // UI receives render-error; callers awaiting this.pending still receive the rejection.
+    this.pending.catch(() => {});
+  }
+  async whenReady() {
+    let pending;
+    do {
+      pending = this.pending;
+      await pending;
+    } while (pending !== this.pending);
+  }
+  async renderAsync(time, options = {}) {
+    const position = this.render(time, options);
+    await this.whenReady();
+    return position;
+  }
+  cloneFrame() {
+    const svg = this.svg.cloneNode(true);
+    for (const child of [...svg.children]) {
+      const id = child.getAttribute("data-source-id");
+      if (!id) continue;
+      if (child.style.display === "none") child.remove();
+      else this.sources.get(id)?.snapshot?.(child);
+    }
+    return svg;
+  }
   snapshot() {
-    return new XMLSerializer().serializeToString(this.svg);
+    return new XMLSerializer().serializeToString(this.cloneFrame());
   }
 }
 export async function migrateLegacy(old) {

@@ -33,7 +33,7 @@ export class FastExporter {
         visited.add(scene.sourceId);
         const host = this.renderer.sources.get(scene.sourceId)?.host;
         const effect = host?.querySelector(
-          "filter,mask,pattern,textPath,foreignObject",
+          "filter,mask,pattern,textPath,foreignObject:not([data-canvas-frame])",
         );
         if (effect)
           return `镜头「${scene.name}」包含${effect.localName}效果，使用兼容渲染`;
@@ -179,19 +179,10 @@ export class FastExporter {
     }
   }
   async draw(time) {
-    this.renderer.render(time);
-    const stage = this.renderer.svg,
-      svg = stage.cloneNode(false);
+    await this.renderer.renderAsync(time, {outputWidth:this.width});
+    const svg = this.renderer.cloneFrame();
     svg.setAttribute("width", this.width);
     svg.setAttribute("height", this.height);
-    for (const child of stage.children) {
-      if (
-        child.hasAttribute("data-source-id") &&
-        child.style.display === "none"
-      )
-        continue;
-      svg.appendChild(child.cloneNode(true));
-    }
     const url = URL.createObjectURL(
         new Blob([new XMLSerializer().serializeToString(svg)], {
           type: "image/svg+xml",

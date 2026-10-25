@@ -11,6 +11,9 @@ import { WorkspaceLayout } from "./workspace.mjs";
 import { CanvasSelection } from "./canvas-selection.mjs";
 import { TimelineController } from "./timeline-controller.mjs";
 import * as T from "./timeline.mjs";
+import { appendProject } from "./project-merge.mjs";
+import { hasLinkedResources } from "./resources.mjs";
+import { createImportController } from "./import-controller.mjs";
 if (location.protocol !== "file:") main();
 async function main() {
   const $ = (s) => document.querySelector(s),
@@ -29,6 +32,9 @@ async function main() {
   const renderer = new Renderer($("#stage")),
     audio = new AudioPlayer();
   let project,
+    loading = false,
+    loadGeneration = 0,
+    fileGeneration = 0,
     index = 0,
     time = 0,
     tab = "text",
@@ -146,15 +152,18 @@ async function main() {
       }, 500);
   }
   function pause() {
+    const wasPlaying = playing;
     playing = false;
     cancelAnimationFrame(raf);
     audio.pause();
     $("#playBtn").textContent = "▶";
     $("#playBtn").setAttribute("aria-label", "播放");
+    if (wasPlaying && !loading) renderer.render(time);
   }
   function seek(t, follow = true) {
+    if (loading) return;
     time = P.clamp(t, 0, Math.max(0, P.duration(project) - 0.0001));
-    const pos = renderer.render(time);
+    const pos = renderer.render(time, { presentIntermediate: playing });
     if (follow && index !== pos.index) {
       index = pos.index;
       selection.clear(false);
@@ -167,6 +176,7 @@ async function main() {
     selectionBox();
   }
   function togglePlay() {
+    if (loading) return;
     if (selection.gesture) selection.gesture.cancel();
     timeline.cancel();
     if (playing) {
@@ -255,6 +265,7 @@ async function main() {
     $("#projectTitle").value = project.title;
   }
   function change(fn, rebuild = false) {
+    if (loading) return false;
     if (selection.gesture) selection.gesture.cancel();
     timeline.cancel();
     pause();
@@ -365,9 +376,9 @@ async function main() {
       s = scene();
     const data =
       tab === "text"
-        ? [s.texts, s.subtitles, s.in, P.length(s)]
+        ? [s.texts, s.subtitles, s.in, P.length(s), s.parameterOverrides]
         : tab === "object"
-          ? [s.objects, s.objectOverrides]
+          ? [s.objects, s.objectOverrides, s.parameterOverrides]
           : tab === "scene"
             ? [
                 s.name,
@@ -421,6 +432,22 @@ async function main() {
           project.workflow.script = { status: "confirmed" };
         });
       if (tx) {
+        $("#textWidth").disabled = Boolean(
+          tx.editableFields && !tx.editableFields.includes("width"),
+        );
+        $("#textWidth").title = $("#textWidth").disabled
+          ? "此来源的换行由原始程序控制"
+          : "";
+        if (
+          ![...$("#textFont").options].some(
+            (option) => option.value === tx.font,
+          )
+        ) {
+          const option = document.createElement("option");
+          option.value = tx.font;
+          option.textContent = tx.font;
+          $("#textFont").append(option);
+        }
         $("#textFont").value = tx.font;
         $("#editText").onchange = (e) =>
           change(() => {
@@ -595,6 +622,71 @@ async function main() {
             })),
       );
     }
+    renderParameters(pane, s);
+  }
+  function renderParameters(pane, s) {
+    const object = s.objects.find((o) => o.id === selection.primary);
+    const definitions = object?.parameters || {};
+    if (!Object.keys(definitions).length || !["text", "object"].includes(tab))
+      return;
+    const group = document.createElement("div");
+    group.className = "parameter-editor";
+    group.innerHTML =
+      '<div class="section-title"><strong>动作与外观</strong><button id="resetParameters">恢复参数</button></div>';
+    for (const [key, d] of Object.entries(definitions)) {
+      const value = s.parameterOverrides?.[object.id]?.[key] ?? d.default;
+      const field = document.createElement("label");
+      field.className = "field";
+      field.textContent = d.label;
+      const input = document.createElement(
+        d.type === "select" ? "select" : "input",
+      );
+      input.dataset.parameter = key;
+      input.setAttribute("aria-label", d.label);
+      if (d.type === "select")
+        for (const option of d.options) {
+          const item = document.createElement("option");
+          item.value = option;
+          item.textContent = option;
+          input.append(item);
+        }
+      else
+        input.type =
+          d.type === "boolean"
+            ? "checkbox"
+            : d.type === "number"
+              ? "number"
+              : d.type === "color"
+                ? "color"
+                : "text";
+      if (d.type === "number") {
+        input.min = d.min;
+        input.max = d.max;
+        input.step = d.step || "any";
+      }
+      if (d.type === "boolean") input.checked = value;
+      else input.value = value;
+      input.onchange = () =>
+        change(() => {
+          s.parameterOverrides ??= {};
+          s.parameterOverrides[object.id] = {
+            ...s.parameterOverrides[object.id],
+            [key]:
+              d.type === "boolean"
+                ? input.checked
+                : d.type === "number"
+                  ? +input.value
+                  : input.value,
+          };
+        });
+      field.append(input);
+      group.append(field);
+    }
+    pane.append(group);
+    group.querySelector("#resetParameters").onclick = () =>
+      change(() => {
+        if (s.parameterOverrides) delete s.parameterOverrides[object.id];
+      });
   }
   function audioField(label, value, i, key) {
     return `<div class="field"><label>${label}</label><input type="number" min="0" step=".1" value="${Number(value).toFixed(2)}" data-a-index="${i}" data-a-key="${key}" aria-label="${label}${i + 1}"></div>`;
@@ -633,15 +725,22 @@ async function main() {
     }, true);
   }
   async function loadProject(candidate) {
+    const generation = ++loadGeneration,
+      before = project;
     timeline.cancel();
     if (selection.gesture) selection.gesture.cancel();
     pause();
-    let next = await migrateLegacy(candidate),
-      before = project;
+    loading = true;
+    $("main").inert = true;
+    window.studio.ready = false;
     try {
+      const next = await migrateLegacy(candidate);
+      if (generation !== loadGeneration) return false;
       const nextValidator = new P.EditValidator();
       nextValidator.validate(next);
       renderer.load(next);
+      await renderer.whenReady();
+      if (generation !== loadGeneration) return false;
       finishMigration(next);
       project = next;
       editValidator = nextValidator;
@@ -653,21 +752,33 @@ async function main() {
       history = new P.History(25);
       unsaved = false;
       audio.dispose();
+      loading = false;
       renderAll();
       window.studio.ready = true;
+      return true;
     } catch (e) {
+      if (generation !== loadGeneration) return false;
       if (before) {
         renderer.load(before);
         project = before;
+        await renderer.whenReady();
+        if (generation !== loadGeneration) return false;
+        loading = false;
         renderAll();
       }
       throw e;
+    } finally {
+      if (generation === loadGeneration) {
+        loading = false;
+        $("main").inert = false;
+        window.studio.ready = Boolean(project);
+      }
     }
   }
   async function importFile(file) {
-    if (file.size > 160 * 1024 * 1024) throw Error("工程文件超过 160 MB");
     const ext = file.name.split(".").pop().toLowerCase();
-    if (["zip", "svgfilm"].includes(ext)) {
+    if (["zip", "svgfilm", "prism"].includes(ext)) {
+      if (file.size > 4 * 1024 ** 3) throw Error("工程包超过 4 GiB");
       const r = await fetch("/api/import", {
         method: "POST",
         headers: { "Content-Type": "application/zip" },
@@ -677,6 +788,8 @@ async function main() {
       if (!r.ok) throw Error(p.error);
       return { project: p };
     }
+    if (file.size > 160 * 1024 * 1024)
+      throw Error("单文件工程超过 160 MiB，请使用工程包");
     const text = await file.text();
     if (ext === "svg")
       return {
@@ -695,11 +808,16 @@ async function main() {
     pause();
     const a = await readAudio(file);
     change(() => {
+      const resourceId = a.resource ? P.uid("audio-resource") : null;
+      if (resourceId) {
+        project.schemaVersion = P.VERSION;
+        project.resources = { ...project.resources, [resourceId]: a.resource };
+      }
       project.audioTracks.push({
         id: P.uid("audio"),
         kind,
         name: file.name || "录音",
-        dataUrl: a.dataUrl,
+        ...(resourceId ? { resourceId } : { dataUrl: a.dataUrl }),
         start,
         offset: 0,
         duration: Math.min(
@@ -808,6 +926,7 @@ async function main() {
       time = P.sceneStart(project, index);
     }, true);
   const undo = (redo) => {
+    if (loading) return;
     if (timeline.gesture) {
       timeline.cancel();
       return;
@@ -859,35 +978,73 @@ async function main() {
       tab = "text";
       P.dirty(project);
     });
-  $("#importBtn").onclick = () => $("#fileInput").click();
-  $("#fileInput").onchange = async (e) => {
-    try {
-      if (e.target.files[0]) {
-        const { project: incoming, notice } = await importFile(
-          e.target.files[0],
-        );
-        if (unsaved)
-          download(
-            project.title + ".svgfilm.json",
-            P.serializeProject(project),
-          );
-        await loadProject(incoming);
-        toast(notice || "工程已导入");
-      }
-    } catch (e) {
-      toast(e.message);
-    } finally {
-      $("#fileInput").value = "";
-    }
+  async function importProjectFile(file) {
+    if (!file) return;
+    const generation=++fileGeneration;
+    const {project:incoming,notice}=await importFile(file);
+    if(generation!==fileGeneration)return;
+    if(unsaved)await saveProject();
+    if(generation!==fileGeneration || !await loadProject(incoming))return;
+    toast(notice || "工程已导入");
+    await imports.remember(project,file.name);
+  }
+  const imports=createImportController({
+    notify:toast,openFile:importProjectFile,
+    load:async incoming=>{++fileGeneration;if(unsaved)await saveProject();return loadProject(incoming);},
+  });
+  $("#fileInput").onchange=async event=>{
+    try{await importProjectFile(event.target.files[0]);}
+    catch(error){toast(error.message);}
+    finally{event.target.value="";}
   };
-  $("#saveBtn").onclick = () => {
-    try {
+  async function saveProject() {
+    P.validateProject(project);
+    if (hasLinkedResources(project)) {
+      const response = await fetch("/api/package", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw Error(result.error);
+      const link = document.createElement("a");
+      link.href =
+        result.url + "?name=" + encodeURIComponent(project.title + ".prism");
+      link.download = project.title + ".prism";
+      link.click();
+    } else
       download(project.title + ".svgfilm.json", P.serializeProject(project));
+  }
+  $("#saveBtn").onclick = async () => {
+    try {
+      await saveProject();
       unsaved = false;
       updateTransport();
       toast("工程已保存，包含全部素材与声音");
     } catch (e) {
       toast(e.message);
+    }
+  };
+  $("#appendBtn").onclick = () => $("#appendInput").click();
+  $("#appendInput").onchange = async (event) => {
+    const generation = ++fileGeneration;
+    try {
+      const file = event.target.files[0];
+      if (!file) return;
+      const { project: incoming } = await importFile(file),
+        before = P.snapshotProject(project);
+      if (generation !== fileGeneration) return;
+      const merged = appendProject(project, await migrateLegacy(incoming));
+      if (!(await loadProject(merged))) return;
+      history.push(before);
+      unsaved = true;
+      renderAll();
+      saveDraft();
+      toast("工程已追加到时间轴");
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      event.target.value = "";
     }
   };
   $("#addSvg").onclick = () => $("#svgInput").click();
@@ -936,8 +1093,14 @@ async function main() {
   };
   $("#srtExport").onclick = () =>
     download(project.title + ".srt", P.toSrt(project), "application/x-subrip");
-  $("#svgBtn").onclick = () =>
-    download(scene().name + ".svg", renderer.snapshot(), "image/svg+xml");
+  $("#svgBtn").onclick = async () => {
+    try {
+      await renderer.whenReady();
+      download(scene().name + ".svg", renderer.snapshot(), "image/svg+xml");
+    } catch (error) {
+      toast(error.message);
+    }
+  };
   document.addEventListener("keydown", (e) => {
     if (e.defaultPrevented) return;
     if (
@@ -1104,10 +1267,16 @@ async function main() {
     },
     renderer,
   };
+  renderer.svg.addEventListener("render-ready", () => selectionBox());
+  renderer.svg.addEventListener("render-error", (event) => {
+    pause();
+    toast(event.detail.message);
+  });
   try {
     const response = await fetch("案例_细胞结构.svgfilm.json");
     if (!response.ok) throw Error("案例文件缺失");
     await loadProject(await response.json());
+    imports.resume();
     const pending = sessionStorage.getItem("svgfilm-export");
     if (pending) {
       job = JSON.parse(pending).id;

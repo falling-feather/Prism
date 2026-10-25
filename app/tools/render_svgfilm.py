@@ -1,6 +1,7 @@
 """Deterministic SVG export with bounded WebCodecs batches and a screenshot fallback."""
 from pathlib import Path
 import argparse,base64,json,shutil,subprocess,sys,time
+from asset_store import AssetStore
 
 
 def emit(progress,message,**details):
@@ -116,8 +117,12 @@ def render(project_path,url,job,out,width,start,end,cancel,mode='compatibility')
                 page.expose_function('prismCancelled',lambda:cancel.exists())
                 page.on('pageerror',lambda e:errors.append(str(e)))
                 page.goto(url+'/render.html?job='+job)
-                try:page.wait_for_function('async()=>!!window.exporter?.ready || await prismCancelled()',timeout=45000,polling=150)
-                except Exception:raise RuntimeError('; '.join(errors) or '渲染页面未能就绪')
+                deadline=time.monotonic()+45
+                while not page.evaluate('Boolean(window.exporter?.ready)'):
+                    check_cancel(cancel)
+                    if errors:raise RuntimeError('; '.join(errors))
+                    if time.monotonic()>deadline:raise RuntimeError('渲染页面未能就绪')
+                    page.wait_for_timeout(100)
                 check_cancel(cancel)
                 frames=page.evaluate('(seconds)=>exporter.frameCount(seconds)',end-start);seconds=frames/fps
                 if not 1<=frames<=432000:raise ValueError('导出帧数超出范围')
@@ -145,7 +150,12 @@ def render(project_path,url,job,out,width,start,end,cancel,mode='compatibility')
         else:
             command=['ffmpeg','-y','-v','error','-i',str(silent)]
             for i,t in enumerate(tracks,1):
-                file=out.parent/f'audio-{i}.bin';file.write_bytes(base64.b64decode(t['dataUrl'].split(',',1)[1],validate=True));command+=['-i',str(file)]
+                resource=project.get('resources',{}).get(t.get('resourceId'),{})
+                if resource.get('assetId'):
+                    file=AssetStore(Path(__file__).resolve().parents[1]/'.work'/'assets').path(resource['assetId'])
+                else:
+                    file=out.parent/f'audio-{i}.bin';file.write_bytes(base64.b64decode((resource.get('dataUrl') or t['dataUrl']).split(',',1)[1],validate=True))
+                command+=['-i',str(file)]
             command+=['-filter_complex',audio_filters(tracks,start,seconds),'-map','0:v:0','-map','[mix]','-t',str(seconds),'-c:v','copy','-c:a','aac','-b:a','192k','-ar','48000','-movflags','+faststart',str(out)]
             run_ffmpeg(command,log,cancel)
         check_cancel(cancel)

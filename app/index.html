@@ -3,14 +3,28 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>映物 · Prism — SVG 动画工作台</title>
+    <title>映物 · Prism — 动画编辑工作台</title>
+    <link rel="icon" type="image/png" href="assets/brand/prism-mark.png" />
     <link rel="stylesheet" href="src/editor.css" />
   </head>
   <body class="workspace-inspector-hidden timeline-collapsed">
     <header>
       <div class="brand">
-        <span class="brand-icon">▱</span>
-        <div><strong>映物 · Prism</strong><small>把道理，映成画面</small></div>
+        <img
+          class="brand-logo"
+          src="assets/brand/prism-logo.png"
+          alt="映物 Prism — 把道理，映成画面"
+          width="168"
+          height="64"
+        />
+        <img
+          class="brand-mark"
+          src="assets/brand/prism-mark.png"
+          alt=""
+          width="32"
+          height="32"
+        />
+        <strong class="brand-name">映物</strong>
       </div>
       <div class="project-title">
         <input id="projectTitle" aria-label="视频名称" /><span id="saveState"
@@ -28,6 +42,16 @@
         <div class="panel-heading">
           <strong>镜头</strong><span id="sceneCount"></span
           ><button id="addSvg" title="导入 SVG 作为新镜头">＋</button>
+        </div>
+        <div class="source-actions">
+          <button id="appendBtn" title="把另一工程的镜头与声音追加到当前时间轴">
+            追加工程</button
+          ><button
+            id="importSourceBtn"
+            title="直接读取本机 HTML／JavaScript Canvas 工程，识别可编辑元素"
+          >
+            源码目录
+          </button>
         </div>
         <div id="sceneList"></div>
         <div class="scene-actions">
@@ -270,7 +294,12 @@
     <input
       id="fileInput"
       type="file"
-      accept=".json,.svgfilm,.zip,.svg,.html"
+      accept=".json,.svgfilm,.zip,.prism,.svg,.html"
+      hidden
+    /><input
+      id="appendInput"
+      type="file"
+      accept=".json,.svgfilm,.zip,.prism,.svg,.html"
       hidden
     /><input id="svgInput" type="file" accept=".svg" hidden /><input
       id="audioInput"
@@ -278,6 +307,30 @@
       accept="audio/*"
       hidden
     /><input id="srtInput" type="file" accept=".srt" hidden />
+    <input id="sourceFolderInput" type="file" webkitdirectory multiple hidden />
+    <dialog id="importDialog">
+      <div class="dialog-head"><h2>打开工程</h2><button id="closeImport" aria-label="关闭导入">×</button></div>
+      <div class="row"><button id="chooseProjectFile">选择工程文件</button><button id="chooseSourceDirectory">选择文件夹并查找工程</button></div>
+      <h3>最近导入</h3>
+      <p>点击打开导入时的本机副本。原目录有更新时，请重新选择文件夹。</p>
+      <div id="recentImportList" class="import-options"></div>
+    </dialog>
+    <dialog id="sourceChoiceDialog">
+      <h2>查找视频工程</h2><p id="sourceScanStatus" role="status"></p>
+      <div id="sourceCandidates" class="import-options"></div>
+      <div class="row"><button id="sourceChoiceCancel">取消选择</button></div>
+    </dialog>
+    <dialog id="sourceDialog">
+      <h2>读取源码工程</h2>
+      <p>识别画面对象并保留原动画。独立音轨可在“声音”中另行导入。</p>
+      <progress id="sourceProgress" max="100" value="0"></progress>
+      <p id="sourceStatus" role="status">准备读取源码目录</p>
+      <ul id="sourceNotes"></ul>
+      <div class="row">
+        <button id="sourceCancel">取消</button
+        ><button id="sourceClose" hidden>关闭</button>
+      </div>
+    </dialog>
     <div id="toast" role="status"></div>
     <dialog id="exportDialog">
       <form method="dialog">

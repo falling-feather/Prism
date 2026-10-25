@@ -1,0 +1,63 @@
+{
+  "schema": "svgfilm-project",
+  "schemaVersion": "0.4.0",
+  "projectId": "canvas-starter",
+  "title": "可编辑 Canvas 动画",
+  "canvas": { "width": 640, "height": 360, "fps": 24, "background": "#f3efe4" },
+  "sources": {
+    "demo": {
+      "type": "canvas-program-v1",
+      "duration": 6,
+      "canvas": { "width": 640, "height": 360 },
+      "objects": [
+        {
+          "id": "ball",
+          "label": "小球",
+          "bounds": [70, 120, 60, 60],
+          "parameters": {
+            "color": { "type": "color", "label": "颜色", "default": "#315f74" },
+            "speed": {
+              "type": "number",
+              "label": "速度",
+              "default": 25,
+              "min": 0,
+              "max": 60
+            }
+          }
+        },
+        {
+          "id": "title",
+          "label": "标题",
+          "bounds": [40, 25, 560, 40],
+          "text": {
+            "text": "修改文字，调整小球颜色和速度",
+            "x": 320,
+            "y": 55,
+            "size": 26,
+            "font": "sans-serif",
+            "fill": "#26324f",
+            "anchor": "middle",
+            "start": 0,
+            "end": 6
+          }
+        }
+      ],
+      "program": "return {render(ctx,time,api){ctx.fillStyle='#f3efe4';ctx.fillRect(0,0,api.width,api.height);const p=api.params('ball');api.object('ball',(c,p)=>{c.fillStyle=p.color;c.beginPath();c.arc(100,150,30,0,Math.PI*2);c.fill();},{x:time*p.speed});api.text('title');}};"
+    }
+  },
+  "scenes": [
+    {
+      "id": "one",
+      "sourceId": "demo",
+      "name": "Canvas 动画",
+      "in": 0,
+      "out": 6,
+      "hold": 0,
+      "objects": [],
+      "texts": [],
+      "objectOverrides": {},
+      "subtitles": []
+    }
+  ],
+  "audioTracks": []
+}

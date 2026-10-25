@@ -1,7 +1,8 @@
 /** Source assets are immutable; scenes are editable cuts of sources. */
-import { validateAnimations, SVG_ID } from "./animation.mjs";
-export const VERSION = "0.3.0";
-export const READABLE_VERSIONS = ["0.2.0", VERSION];
+import { validateSource, validateParameters } from "./source-contract.mjs";
+import { validateResources } from "./resources.mjs";
+export const VERSION = "0.4.0";
+export const READABLE_VERSIONS = ["0.2.0", "0.3.0", VERSION];
 export const clone = (x) => structuredClone(x);
 const frozenSources = new WeakSet();
 const jsonBytes = (value) =>
@@ -19,12 +20,15 @@ export function snapshotProject(project) {
   const snapshot = clone({
     ...project,
     sources: null,
+    ...(project.resources === undefined ? {} : { resources: null }),
     audioTracks: project.audioTracks.map((track) => ({
       ...track,
       dataUrl: null,
     })),
   });
   snapshot.sources = freezeSources(project.sources);
+  if (project.resources !== undefined)
+    snapshot.resources = freezeSources(project.resources);
   snapshot.audioTracks.forEach((track, i) => {
     track.dataUrl = project.audioTracks[i].dataUrl;
   });
@@ -38,12 +42,18 @@ export class EditValidator {
     this.audio = new Map();
   }
   sourcesValid(p) {
-    return this.sources === p.sources && this.sourceVersion === p.schemaVersion;
+    return (
+      this.sources === p.sources &&
+      this.resources === p.resources &&
+      this.sourceVersion === p.schemaVersion
+    );
   }
   rememberSources(p) {
     this.sources = p.sources;
+    this.resources = p.resources;
     this.sourceVersion = p.schemaVersion;
     this.sourceBytes = jsonBytes(p.sources);
+    this.resourceBytes = p.resources === undefined ? 0 : jsonBytes(p.resources);
   }
   hasAudio(url) {
     return this.audio.has(url);
@@ -55,25 +65,36 @@ export class EditValidator {
     const metadata = {
       ...p,
       sources: null,
-      audioTracks: p.audioTracks.map((a) => ({ ...a, dataUrl: "" })),
+      ...(p.resources === undefined ? {} : { resources: null }),
+      audioTracks: p.audioTracks.map((a) =>
+        a.dataUrl === undefined ? a : { ...a, dataUrl: "" },
+      ),
     };
     return (
       jsonBytes(metadata) +
       (this.sources === p.sources ? this.sourceBytes : jsonBytes(p.sources)) -
       4 +
+      (p.resources === undefined
+        ? 0
+        : (this.resources === p.resources
+            ? this.resourceBytes
+            : jsonBytes(p.resources)) - 4) +
       p.audioTracks.reduce(
         (n, a) =>
-          n +
-          (this.nextAudio?.get(a.dataUrl) ??
-            this.audio.get(a.dataUrl) ??
-            jsonBytes(a.dataUrl)) -
-          2,
+          a.dataUrl === undefined
+            ? n
+            : n +
+              (this.nextAudio?.get(a.dataUrl) ??
+                this.audio.get(a.dataUrl) ??
+                jsonBytes(a.dataUrl)) -
+              2,
         0,
       )
     );
   }
   validate(p) {
     freezeSources(p.sources);
+    freezeSources(p.resources);
     this.nextAudio = new Map();
     try {
       validateProject(p, this);
@@ -128,7 +149,7 @@ export function validateProject(p, cache = null) {
     p?.schema !== "svgfilm-project" ||
     !READABLE_VERSIONS.includes(p.schemaVersion)
   )
-    throw Error("不是支持的 SVGFilm 0.2／0.3 工程");
+    throw Error("不是支持的 SVGFilm 0.2／0.3／0.4 工程");
   if (!cache && jsonBytes(p) > 120 * 1024 * 1024)
     throw Error("工程超过 120 MB，请缩短或压缩音频后再导入；当前编辑保持不变");
   if (!Array.isArray(p.scenes) || p.scenes.length < 1 || p.scenes.length > 500)
@@ -139,28 +160,12 @@ export function validateProject(p, cache = null) {
   unique(p.scenes, "镜头");
   if (!p.sources || typeof p.sources !== "object" || Array.isArray(p.sources))
     throw Error("缺少素材来源");
+  if (p.schemaVersion !== VERSION && Object.keys(p.resources || {}).length)
+    throw Error("独立素材要求工程 0.4.0");
   if (!cache?.sourcesValid(p)) {
+    validateResources(p.resources);
     for (const [id, src] of Object.entries(p.sources)) {
-      if (
-        !src ||
-        !["svg", "cell-native-v1", "svg-keyframes-v1"].includes(src.type)
-      )
-        throw Error("不支持的来源渲染器");
-      finite(src.duration, "来源时长", 0.01, 7200);
-      if (src.type === "svg" || src.type === "svg-keyframes-v1") {
-        if (typeof src.svg !== "string" || !src.svg.includes("<svg"))
-          throw Error("缺少 SVG 来源内容");
-      }
-      if (src.type === "svg-keyframes-v1") {
-        if (p.schemaVersion !== VERSION)
-          throw Error("通用动画来源要求 SVGFilm 0.3.0");
-        if (!SVG_ID.test(id))
-          throw Error(
-            "动画 sourceId 须以字母开头，仅含字母数字下划线和连字符，最多96字符",
-          );
-        validateAnimations(src);
-      } else if (src.animations !== undefined)
-        throw Error("animations 仅适用于 svg-keyframes-v1 来源");
+      validateSource(id, src, p.schemaVersion, p.resources || {});
     }
     cache?.rememberSources(p);
   }
@@ -180,6 +185,7 @@ export function validateProject(p, cache = null) {
     unique(s.subtitles, "字幕");
     unique(s.texts, "文字");
     unique(s.objects, "对象");
+    validateParameters(s.sourceId, src, s.parameterOverrides);
     for (const l of s.subtitles) {
       if (typeof l.text !== "string") throw Error("字幕内容无效");
       finite(l.start, "字幕开始", 0, length(s));
@@ -195,7 +201,7 @@ export function validateProject(p, cache = null) {
         throw Error("文字内容无效");
       finite(t.x, "文字位置", -20000, 20000);
       finite(t.y, "文字位置", -20000, 20000);
-      finite(t.size, "字号", 4, 500);
+      finite(t.size, "字号", 0.01, 4096);
       finite(t.width || 0, "文字换行宽度", 0, 20000);
     }
     const ids = new Set(s.objects.map((o) => o.id));
@@ -211,12 +217,18 @@ export function validateProject(p, cache = null) {
     throw Error("音轨数量超出范围");
   unique(p.audioTracks, "音轨");
   for (const a of p.audioTracks) {
-    if (
+    if (a.resourceId !== undefined) {
+      if (
+        a.dataUrl !== undefined ||
+        !p.resources?.[a.resourceId]?.mime.startsWith("audio/")
+      )
+        throw Error("音轨资源引用无效或存在重复来源");
+    } else if (
       !cache?.hasAudio(a.dataUrl) &&
       !/^data:audio\/[\w.+-]+;base64,[A-Za-z0-9+/=\r\n]+$/.test(a.dataUrl || "")
     )
       throw Error("音频素材须完整包含在工程内");
-    cache?.rememberAudio(a.dataUrl);
+    if (a.dataUrl !== undefined) cache?.rememberAudio(a.dataUrl);
     finite(a.start, "音轨开始", 0, 7200);
     finite(a.offset || 0, "音频源起点", 0, 7200);
     finite(a.duration, "音轨长度", 0.01, 7200);

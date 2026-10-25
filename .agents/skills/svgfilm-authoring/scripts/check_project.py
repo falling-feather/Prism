@@ -4,6 +4,7 @@ import argparse,json,sys,urllib.parse,urllib.request
 
 CHECK=r'''async input=>{
   const P=await import('./src/project.mjs');
+  const R=await import('./src/resources.mjs');
   await studio.loadProject(input);
   const initial=studio.getProject(),times=[];
   const images=[...studio.renderer.svg.querySelectorAll('image')];
@@ -18,22 +19,22 @@ CHECK=r'''async input=>{
     const length=await new Promise((resolve,reject)=>{
       const finish=(value,error)=>{clearTimeout(timer);audio.onloadedmetadata=audio.onerror=null;audio.removeAttribute('src');audio.load();error?reject(Error(error)):resolve(value);};
       const timer=setTimeout(()=>finish(null,'音频解码超时'),10000);
-      audio.onloadedmetadata=()=>finish(audio.duration);audio.onerror=()=>finish(null,'音频无法解码：'+track.name);audio.src=track.dataUrl;
+      audio.onloadedmetadata=()=>finish(audio.duration);audio.onerror=()=>finish(null,'音频无法解码：'+track.name);audio.src=R.audioUrl(initial,track);
     });
     if(!Number.isFinite(length)||track.offset+track.duration>length+.05)throw Error('音频裁剪超出真实素材长度：'+track.name);
     if(track.mediaDuration!==undefined&&Math.abs(track.mediaDuration-length)>.05)throw Error('音频 mediaDuration 与实际素材不一致：'+track.name);
   }
   let start=0;
   for(const scene of initial.scenes){const length=P.length(scene);times.push(start,start+length/2,start+Math.max(0,length-1/initial.canvas.fps));start+=length;}
-  const snapshot=t=>{studio.seek(t);const svg=studio.renderer.svg.cloneNode(true);svg.querySelectorAll('[data-source-id]').forEach(e=>{if(e.style.display==='none')e.remove();});return new XMLSerializer().serializeToString(svg);};
-  for(const time of times){const first=snapshot(time);snapshot(0);if(snapshot(time)!==first)throw Error('重复寻帧得到不同画面：'+time);}
+  const snapshot=async t=>{studio.seek(t);await studio.renderer.whenReady();return studio.renderer.snapshot();};
+  for(const time of times){const first=await snapshot(time);await snapshot(0);if(await snapshot(time)!==first)throw Error('重复寻帧得到不同画面：'+time);}
   const edited=P.clone(initial),scene=edited.scenes[0],checks={text:'not-present',component:'not-present'};
   if(scene.texts.length){scene.texts[0].text+=' [check]';checks.text='pending';}
   if(scene.objects.length){scene.objectOverrides[scene.objects[0].id]={...scene.objectOverrides[scene.objects[0].id],dx:17};checks.component='pending';}
-  await studio.loadProject(edited);studio.seek(P.length(scene)/2);
+  await studio.loadProject(edited);studio.seek(P.length(scene)/2);await studio.renderer.whenReady();
   if(checks.text==='pending'){
     const node=studio.renderer.node(scene.texts[0].objectId);
-    if(!node?.textContent.includes('[check]'))throw Error('文字修改没有反映到渲染节点');checks.text='pass';
+    if(!(node?.getAttribute('data-source-text')||node?.textContent||'').includes('[check]'))throw Error('文字修改没有反映到渲染节点');checks.text='pass';
   }
   if(checks.component==='pending'){
     const wrapper=studio.renderer.wrapper(scene.objects[0].id);
@@ -56,11 +57,18 @@ def main():
         url=args.url.rstrip('/')
         if urllib.parse.urlsplit(url).hostname not in ('127.0.0.1','localhost','::1'):raise ValueError('校验工具仅连接本机工作台')
         if args.report and args.report.resolve()==args.project.resolve():raise ValueError('报告路径不能覆盖输入工程')
-        raw=args.project.read_bytes()
-        if len(raw)>160*1024*1024:raise ValueError('输入超过160 MiB')
-        project=json.loads(raw.decode('utf-8-sig'))
+        if args.project.suffix.lower() in ('.zip','.prism','.svgfilm'):
+            size=args.project.stat().st_size
+            if size>4*1024**3:raise ValueError('输入工程包超过4 GiB')
+            with args.project.open('rb') as stream:
+                request=urllib.request.Request(url+'/api/import',data=stream,headers={'Content-Type':'application/zip','Content-Length':str(size)})
+                with urllib.request.urlopen(request,timeout=120) as response:project=json.load(response)
+        else:
+            raw=args.project.read_bytes()
+            if len(raw)>160*1024*1024:raise ValueError('输入超过160 MiB')
+            project=json.loads(raw.decode('utf-8-sig'))
         with urllib.request.urlopen(url+'/api/health',timeout=5) as response:health=json.load(response)
-        if '0.3.0' not in health.get('schemaVersions',[]) and health.get('version')!='0.3.0':raise ValueError('请启动支持SVGFilm 0.3的工作台服务后校验')
+        if project.get('schemaVersion') not in health.get('schemaVersions',[]):raise ValueError('当前工作台不支持此工程版本，请更新服务')
         from playwright.sync_api import sync_playwright
         with sync_playwright() as pw:
             browser=pw.chromium.launch(headless=True,**({} if args.browser=='chromium' else {'channel':args.browser}))
@@ -71,7 +79,7 @@ def main():
                 response=page.request.post(url+'/api/portable',data={'project':project})
                 if not response.ok:raise ValueError(response.text())
                 offline=browser.new_page();offline.on('pageerror',lambda e:errors.append(str(e)))
-                offline.set_content(response.text());offline.wait_for_selector('#stage[data-scene]')
+                offline.set_content(response.text());offline.wait_for_function("document.documentElement.dataset.prismReady==='true'",timeout=45000)
                 offline.locator('#stage').click();offline.wait_for_function("Number(document.querySelector('#stage').dataset.time)>0")
                 offline.close();report['portable']='pass'
             browser.close()

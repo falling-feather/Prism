@@ -50,7 +50,7 @@ with sync_playwright() as pw:
     offline.wait_for_function("Number(document.querySelector('#stage').dataset.time)>.4")
     assert '修改后的标题' in offline.locator('#stage').text_content();offline.close()
     old=copy.deepcopy(p);old['schemaVersion']='0.2.0';old['sources']['motion']['type']='svg';del old['sources']['motion']['animations'];page.evaluate('(p)=>studio.loadProject(p)',old)
-    assert page.evaluate('studio.getProject().schemaVersion')=='0.3.0'
+    assert page.evaluate('async()=>studio.getProject().schemaVersion===(await import("./src/project.mjs")).VERSION')
     gradient=copy.deepcopy(p)
     gradient['sources']['motion']['svg']=gradient['sources']['motion']['svg'].replace('<g id="assembly"','<defs><linearGradient id="paint"><stop offset="0" stop-color="red"/><stop offset="1" stop-color="blue"/></linearGradient></defs><g id="assembly"').replace('<text id="label"','<text fill="url(#paint)" id="label"')
     page.evaluate('(p)=>studio.loadProject(p)',gradient);gradient=page.evaluate('studio.getProject()')

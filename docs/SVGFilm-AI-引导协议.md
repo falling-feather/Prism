@@ -1,39 +1,40 @@
-# SVGFilm AI 引导协议 · 0.3.0
+# SVGFilm AI 引导协议 · 0.4.0
 
-你正在为 映物 Prism 制作可编辑视频。请先遵守以下工程接口，再执行用户另行给出的题材、风格与文稿要求。主要交付为自包含 `.svgfilm.json`；不要只交播放视频。本文完整包含协议和示例，无需安装 Skill 或读取其他链接。
+你正在为 映物 Prism 制作可编辑视频。请先遵守以下工程接口，再执行用户另行给出的题材、风格与文稿要求。交付自包含 `.svgfilm.json` 或含独立素材的 `.prism`；不要只交播放视频。本文包含 SVG 与 Canvas 协议和完整示例，无需安装 Skill 或读取其他链接。
 
 本文件由工作区 Skill 的权威参考自动生成。
 
 ---
 
-# 工程数据协议：SVGFilm 0.3.0
+# 工程数据协议：SVGFilm 0.4.0
 
 关键词：schema、sources、scenes、texts、objects、objectOverrides、subtitles、audioTracks。
 
 ## 版本与文件
 
-主交付是 UTF-8 JSON，文件名推荐 `作品名.svgfilm.json`。顶层是对象；无注释、NaN、Infinity、函数、外部资源路径或 Markdown 围栏。以下类型表描述生产者应输出的契约，校验工具还会验证 SVG 和实际节点绑定。
+小工程使用 UTF-8 JSON，文件名推荐 `作品名.svgfilm.json`；独立素材使用 `.prism` 工程包。顶层是对象；无注释、NaN、Infinity、函数值或 Markdown 围栏。Canvas 程序作为其 program 字段中的字符串提供。素材通过 resources 清单登记，不能提供任意 HTTP 地址或本机绝对路径。
 
 | 字段 | 类型与要求 |
 | --- | --- |
 | schema | 固定字符串 `svgfilm-project` |
-| schemaVersion | 固定字符串 `0.3.0` |
+| schemaVersion | 新工程为 `0.4.0`；工作台仍读取 0.2.0／0.3.0 |
 | projectId | 非空稳定字符串；每部作品独立 |
 | title | 人类可读作品名称 |
 | canvas | `{width,height,fps,background}`；width／height为64–4096的数字，推荐整数；fps为1–60；background为有效CSS颜色 |
 | workflow | 可省略；若提供，推荐 `{"script":{"status":"needs-review"}}`。该状态不是本协议的创作审批步骤 |
 | sources | 以sourceId为键的来源对象；通用来源见下一节 |
+| resources | 可省略；独立图片、音频、字体的资源表，格式见下文 |
 | scenes | 1–500个按播放顺序排列的剪辑对象；格式见下表 |
 | audioTracks | 0–16个全片音轨对象；没有声音时为 `[]` |
 | captionStyle | 可省略；可提供 `{size,font,fill}`，默认28px及工作台默认字体、颜色。使用有效颜色和实际安装的字体 |
 
-工程JSON不得超过120 MiB；全片不得超过7200秒。单音频导入上限80 MiB，内嵌base64后的累计工程预算优先。字体可使用本机具体字体，也可使用sans-serif／serif等通用字体族；通用字体由浏览器选择可用字体。字体不自动打包，跨机器需要相同字体或接受替代字体。
+工程JSON不得超过120 MiB；全片不得超过7200秒。独立单音频上限2 GiB，单图片或字体上限80 MiB，工程包及其解压总大小不超过4 GiB；内嵌base64仍计入JSON预算。Canvas 字体可以随素材登记；SVG 文字使用本机字体，跨机器仍需相同字体或接受替代字体。
 
-新版工作台可迁移0.2工程并保留既有ID。生产者创建通用动画时必须标0.3.0；不能只改版本号把未知格式冒充兼容工程。旧0.2工作台不支持本动画来源，需要先升级。
+新版工作台迁移0.2／0.3工程并保留既有ID。独立资源与Canvas来源必须使用0.4.0；不能只改版本号把未知格式冒充兼容工程。旧版工作台不能读取新增来源，需要先升级。
 
 ## sources：素材与动画
 
-sourceId匹配 `^[A-Za-z][A-Za-z0-9_-]{0,95}$`，例如 `circuit`。每项通用来源包含：
+sourceId匹配 `^[A-Za-z][A-Za-z0-9_-]{0,95}$`，例如 `circuit`。SVG来源包含下表字段；Canvas使用Canvas接口。一个工程可混合不同来源。
 
 | 字段 | 类型与要求 |
 | --- | --- |
@@ -44,7 +45,17 @@ sourceId匹配 `^[A-Za-z][A-Za-z0-9_-]{0,95}$`，例如 `circuit`。每项通用
 
 一个来源可由多幕引用。来源存放原始图形和运动；不同剪辑的文字修改和布局覆盖互相独立。
 
-兼容来源 `svg` 仅提供静态画面，使用旧的自动序号；新作者建议统一使用有稳定ID的 `svg-keyframes-v1`。`cell-native-v1` 是工作台随附的专用细胞适配器，不是通用制作入口，不能拿它表示新题材。
+兼容来源 `svg` 仅提供静态画面，使用旧的自动序号；新SVG作者使用有稳定ID的 `svg-keyframes-v1`。`cell-native-v1` 是工作台随附的专用细胞适配器，不是通用制作入口，不能拿它表示新题材。
+
+## resources：独立素材
+
+以稳定资源编号为键，每项含 `name`、`mime`，以及以下一种来源：
+
+- 自包含JSON：`dataUrl`，完整的对应MIME类型base64数据。
+- 工程包清单：`path`，相对ZIP根目录的素材路径，例如 `assets/portrait.png`。只允许包内真实文件。
+- 工作台本机状态：`assetId`，导入后由服务登记的内容哈希；不要把只有assetId的JSON作为跨电脑交付。点击保存会生成携带素材的工程包。
+
+资源编号沿用sourceId规则；最多5000项。内置适配器使用PNG、JPEG、WebP、GIF图片，浏览器和FFmpeg可解码的音频，以及TTF／OTF／WOFF／WOFF2字体。资源表也允许video／model类型、application/json和application/octet-stream供扩展适配器使用；存入资源表不代表已有对应编辑能力。Canvas通过source.assets中的别名引用图片与字体；音轨通过resourceId引用音频。
 
 ## scenes：剪辑与编辑数据
 
@@ -58,6 +69,7 @@ sourceId匹配 `^[A-Za-z][A-Za-z0-9_-]{0,95}$`，例如 `circuit`。每项通用
 | texts | 所有画面文字的可编辑记录；首次交付可为 `[]` |
 | objects | 所有可编辑组件的记录；首次交付可为 `[]` |
 | objectOverrides | 对象ID到编辑覆盖的映射；首次为 `{}` |
+| parameterOverrides | 可省略；对象完整ID到参数值映射，字段必须由来源声明；Canvas参数接口见专门说明 |
 | subtitles | 字幕对象数组，没有时为 `[]` |
 
 三个时钟必须区分：
@@ -77,7 +89,7 @@ sourceId匹配 `^[A-Za-z][A-Za-z0-9_-]{0,95}$`，例如 `circuit`。每项通用
 保存后的记录：
 
 - `objects[]`：`{id,label,parentId,cx,cy}`。parentId是最近可编辑祖先的对象ID，根组件为null；cx/cy是基础几何在该组件父坐标中的中心。清单须完整；中心为有限数字。
-- `texts[]`：`{id,objectId,text,x,y,size,font,fill,anchor,width,start,end}`。text是唯一可编辑正文；x/y为父SVG文本坐标，范围±20000；size为4–500；width为0–20000，0表示不自动折行；anchor为start／middle／end；font为本机字体族列表，fill为颜色。start/end是来源时间上的可见区间，含start、不含end；默认0到1000000000，保证停留阶段仍可显示。
+- `texts[]`：`{id,objectId,text,x,y,size,font,fill,anchor,width,start,end}`。text是唯一可编辑正文；x/y为父SVG文本坐标，范围±20000；size为0.01–4096（普通文字建议使用可读字号；较小值用于原生动画过渡）；width为0–20000，0表示不自动折行；anchor为start／middle／end；font为本机字体族列表，fill为颜色。start/end是来源时间上的可见区间，含start、不含end；默认0到1000000000，保证停留阶段仍可显示。
 - `objectOverrides[id]`：可含 `dx,dy,scale,rotation,hidden`。dx/dy为父坐标下相对位移（±20000），scale为0.05–20（1为原大小），rotation为角度（±20000），hidden为布尔值。未提供字段按0／1／false处理。只可引用objects中的有效ID。
 
 不要同时手写半份清单让工作台补剩余部分：首次用完整空数组，或保留完整的已有登记结果。教师修改后，`texts`和`objectOverrides`是编辑状态；清空它们会丢失修改。整体缩放是编辑覆盖的计算方式，不新增永久SVG分组。
@@ -92,7 +104,7 @@ sourceId匹配 `^[A-Za-z][A-Za-z0-9_-]{0,95}$`，例如 `circuit`。每项通用
 | --- | --- |
 | id / name | 唯一稳定ID／可读名称 |
 | kind | `music`或`voice` |
-| dataUrl | 完整 `data:audio/<mime>;base64,...`；推荐audio/wav、audio/mpeg、audio/mp4，使用浏览器和FFmpeg均可解码的真实音频 |
+| dataUrl / resourceId | 二选一。dataUrl为完整 `data:audio/<mime>;base64,...`；resourceId引用resources中的音频。推荐audio/wav、audio/mpeg、audio/mp4，须为真实可解码音频 |
 | start | 全片开始时间，0–7200秒 |
 | offset | 源音频入点，0–7200秒 |
 | duration | 使用长度，0.01–7200秒；offset+duration不得超过音源真实长度 |
@@ -188,19 +200,99 @@ origin可省略，默认 `[0,0]`，两项为±20000内的有限数字。tracks�
 
 ---
 
+# Canvas 程序动画接口 · canvas-program-v1
+
+本接口支持保留原生 Canvas 2D 绘制，同时编辑对象、文字和声明的参数。它要求工程 0.4.0；不自动解析普通 HTML，也不把 Canvas 像素当作已有图层。
+
+## 来源结构
+
+在 `sources[sourceId]` 中提供：
+
+| 字段 | 内容 |
+| --- | --- |
+| type | `canvas-program-v1` |
+| duration | 来源时长，秒 |
+| canvas | `{width,height}`，来源逻辑画幅，整数 64–4096 |
+| program | JavaScript 函数体字符串，返回 `{render(ctx,time,api)}`；最多 1 MiB |
+| objects | 最多 2000 个对象声明，允许父子结构 |
+| assets | 可选；素材别名到工程 `resources` 编号的映射 |
+| fonts | 可选；`[{asset,family,weight?,style?}]`，asset 为已声明的字体别名 |
+
+`program` 支持函数、类、数学计算和 Canvas 2D。不要写 HTML、`import`／`export`、DOM 查询、定时播放或网络请求。大型源码可在文件夹工程中用 `programFile` 指向相对路径，通过打包工具编入 `program`。工作台直接读取的 JSON 必须已经包含 `program`。
+
+示例程序体：
+
+```javascript
+return {
+  render(ctx, time, api) {
+    ctx.fillStyle = '#f3efe4';
+    ctx.fillRect(0, 0, api.width, api.height);
+    api.object('ball', (c, params) => {
+      c.fillStyle = params.color;
+      c.beginPath();
+      c.arc(100, 150, 30, 0, Math.PI * 2);
+      c.fill();
+    }, {x: time * 25});
+    api.text('title');
+  }
+};
+```
+
+## 对象与参数
+
+每个对象为 `{id,label,bounds,parentId?,text?,parameters?}`：
+
+- `id` 使用稳定 ASCII 编号，与 SVG ID 的规则相同；一个来源内唯一。
+- `bounds: [x,y,width,height]` 使用父坐标，宽高为正数；这是基础边界和布局缩放中心。
+- `parentId` 引用父对象。绘制时必须在父对象的 `api.object` 内绘制子对象；禁止循环层级。
+- `text` 使用工程中的文字字段：`text,x,y,size,font,fill,anchor,width,start,end`。`start/end` 是来源时间；默认 0 至 1e9。文字仍是可编辑正文。
+- `parameters` 以稳定参数名为键。每项含 `type,label,default`。`number` 必须有 `min,max`，可含 `step`；`select` 必须有字符串 `options`；其余类型为 `boolean`、`text` 和 `color`，color 使用 `#RRGGBB`。
+
+对象编号映射为 `sourceId:o:objectId`，文字为 `sourceId:t:objectId`。来源声明决定能力：全部对象支持变换与隐藏；提供 text 时支持文字编辑；提供 parameters 时显示参数控件。首次剪辑的 objects／texts 留空，由工作台登记。保存后保留完整清单及编号。
+
+布局修改继续使用 `objectOverrides`。参数修改单独保存在镜头的 `parameterOverrides[对象完整编号][参数名]`，不改写来源程序与默认值。
+
+## 绘制 API
+
+| API | 行为 |
+| --- | --- |
+| `api.width / height` | 逻辑画幅。勿用 `ctx.canvas.width` 代替，它可能是更高的输出像素分辨率 |
+| `api.params(id)` | 当前对象的默认参数与本剪辑修改合并后的只读值 |
+| `api.object(id, draw, pose?)` | 绘制可编辑对象；draw 接收 `(ctx, params, time)`，须同步完成 |
+| `api.text(id, pose?)` | 按工作台文字记录绘制真实文字，自动换行并报告边界 |
+| `api.image(alias)` | 取得已声明图片；工作台按需加载并在资源就绪后重绘，不会把缺图的中间帧交付给预览或导出 |
+
+`pose` 可含 `x,y,scale,rotation,origin:[x,y],opacity,bounds`；rotation 单位为度。也可使用 `matrix:[a,b,c,d,e,f]`，但不能同时提供分量变换。bounds 用于报告该时刻实际的局部边界。布局覆盖在运动之外；不要在程序里再次应用用户的布局修改。
+
+每帧同一个对象只调用一次 object 或 text。可按时间不绘制某对象，未绘制的对象不会被框选。不要将每次绘制的随机数或递增计数当作时间；`render` 必须能够独立渲染任意来源时刻，且正确处理正序、倒序和重复寻帧。
+
+`render` 可以返回 Promise，工作台会等待；不要启动后台动画循环。每次初始化或绘制超过 10 秒会终止该环境并报告错误。单帧解码图片预算 256 MiB；图片最大边 16384，输出画布最大边 4096。字体使用已声明的二进制字体资源或本机可用字体。
+
+## 支持程度
+
+此版本提供 Canvas 2D；规范程序接口不包含DOM或三维；原始目录入口另支持Canvas二维纹理的WebGL后期读取，详见项目docs/07-原始源码目录读取.md。PNG 人物可以换图、变换和切换已有姿态；新增骨骼或图片中未分离的部件仍需来源本身提供结构。复杂图解应将有意义的参数登记到对象，不能用不可见的私有字段冒充可编辑能力。
+
+完整示例随工作台提供：参数化时钟、图片文字卡片、SVG／Canvas 混合时间轴。交付前使用统一校验工具，并实际验证一次文字与对象修改、保存回读、寻帧和短片导出。
+
+---
+
 # 交付、检查与互操作
 
 ## 主交付与可选封装
 
-主文件是自包含 `作品名.svgfilm.json`。附上短说明：对应工作台0.3、总时长与帧率、是否包含声音、已执行哪些检查。不要只交截图、当前帧SVG、MP4或单独的动画HTML。
+交付自包含 `作品名.svgfilm.json` 或完整 `.prism` 工程包。附上短说明：对应工作台0.4、来源类型、总时长与帧率、是否包含声音、已执行哪些检查。不要只交截图、当前帧SVG、MP4或单独的动画HTML。
 
-- **ZIP／.svgfilm**：ZIP中放唯一 `project.svgfilm.json`，推荐置于根目录。素材仍内嵌在JSON；旁边的assets文件不会自动解析或关联。不要同时放多份工程JSON。解压内容总大小不超过200 MiB，导入文件不超过160 MiB。
+- **ZIP／.svgfilm／.prism**：ZIP中放唯一 `project.svgfilm.json`，推荐置于根目录。资源清单通过path关联包内素材，不能只放文件而不登记。包本身及解压总大小不超过4 GiB，JSON清单不超过120 MiB。工作台保存含独立素材的工程时自动生成.prism。
 - **HTML**：必须嵌入 `<script id="svgfilm-project" type="application/json">`，内容为同一工程JSON。为避免正文提前关闭script，将JSON中的 `<` 编码为 `\u003c`。工作台仅读取此数据，忽略HTML中的播放脚本。因此“能导入的HTML”不必能独立播放；需要独立播放器时由工作台导出HTML，捆绑其匹配版本运行时。
 - **普通.svg**：作为单个静态镜头导入，原扩展名不携带animations数据；动画主交付依然必须是工程。
 
+目录工程可以放 `project.json`、绘制程序和素材；在来源中用 `programFile` 指向程序体文件，在resources中用path指向素材。运行工作台的 `app/tools/package_project.py 工程目录 --out 作品.prism`，工具只读取、核对路径并打包，不执行程序。不要把完整网页HTML直接放入programFile。
+
+独立HTML会携带运行时与允许容量内的素材；过大的工程应保存工程包或导出MP4。当前帧SVG中的Canvas部分是位图快照，后续对象编辑使用原工程。
+
 ## 真实校验工具
 
-Skill自带 `scripts/check_project.py`，针对匹配版本的已运行工作台检查JSON工程。需要Python的Playwright及可用浏览器；当前工作区可直接使用工作台的 `.venv/Scripts/python.exe`，无需全局安装Skill或依赖。
+Skill自带 `scripts/check_project.py`，针对匹配版本的已运行工作台检查JSON或工程包。需要Python的Playwright及可用浏览器；当前工作区可直接使用工作台的 `.venv/Scripts/python.exe`，无需全局安装Skill或依赖。
 
 在项目根目录运行（将路径替换为实际文件）：
 
@@ -214,8 +306,8 @@ app/.venv/Scripts/python.exe -X utf8 .agents/skills/svgfilm-authoring/scripts/ch
 
 ## 交付前自检
 
-1. JSON可解析，所有来源和音频完整内嵌，版本／来源类型正确；没有伪base64或本机绝对路径。
-2. SVG所有可编辑节点ID稳定、唯一；文字仍是text；动画target存在。初始清单为空，或已有清单保持完整且对应SVG。
+1. JSON可解析，所有来源和素材完整内嵌或随包提供，版本／来源类型正确；没有伪base64或本机绝对路径。
+2. SVG节点或Canvas声明中的对象ID稳定、唯一，文字保留正文，引用存在。初始清单为空，或已有清单保持完整且对应来源。
 3. 全片、剪辑、来源三个时钟区分正确。片头、镜头中部、切点、片尾／停留以及逆序寻帧都能渲染。
 4. 导入后至少实际修改一段文字与一个组件，保存再导入；修改仍在、原动画仍在，字幕／声音时间没有错位。
 5. 需要成片交付时，由工作台实际导出一段MP4，检查动画和声音；再按需求导出全片。工程始终与成片一起保留。
@@ -230,9 +322,9 @@ Skill协议参考是权威文档来源；单文件由 `python scripts/build_prom
 
 ---
 
-# 完整可导入示例
+# 完整可导入 SVG 示例
 
-这是6秒、两幕、无音轨的最小示例。可替换图文和关键帧；初始清单由工作台登记。
+这是继续兼容的0.3工程，6秒、两幕、无音轨。可替换图文和关键帧；初始清单由工作台登记。
 
 ```json
 {
@@ -278,6 +370,78 @@ Skill协议参考是权威文档来源；单文件由 `python scripts/build_prom
       "id": "scene-summary", "sourceId": "summary", "name": "手动修改验证", "in": 0, "out": 3, "hold": 0,
       "texts": [], "objects": [], "objectOverrides": {},
       "subtitles": [{"id": "summary-caption", "text": "工程是交付源文件，MP4 是观看成品。", "start": 0.3, "end": 2.9}]
+    }
+  ],
+  "audioTracks": []
+}
+```
+
+---
+
+# 完整可导入 Canvas 示例
+
+这是0.4程序动画，支持对象变换、文字、颜色与速度参数。
+
+```json
+{
+  "schema": "svgfilm-project",
+  "schemaVersion": "0.4.0",
+  "projectId": "canvas-starter",
+  "title": "可编辑 Canvas 动画",
+  "canvas": { "width": 640, "height": 360, "fps": 24, "background": "#f3efe4" },
+  "sources": {
+    "demo": {
+      "type": "canvas-program-v1",
+      "duration": 6,
+      "canvas": { "width": 640, "height": 360 },
+      "objects": [
+        {
+          "id": "ball",
+          "label": "小球",
+          "bounds": [70, 120, 60, 60],
+          "parameters": {
+            "color": { "type": "color", "label": "颜色", "default": "#315f74" },
+            "speed": {
+              "type": "number",
+              "label": "速度",
+              "default": 25,
+              "min": 0,
+              "max": 60
+            }
+          }
+        },
+        {
+          "id": "title",
+          "label": "标题",
+          "bounds": [40, 25, 560, 40],
+          "text": {
+            "text": "修改文字，调整小球颜色和速度",
+            "x": 320,
+            "y": 55,
+            "size": 26,
+            "font": "sans-serif",
+            "fill": "#26324f",
+            "anchor": "middle",
+            "start": 0,
+            "end": 6
+          }
+        }
+      ],
+      "program": "return {render(ctx,time,api){ctx.fillStyle='#f3efe4';ctx.fillRect(0,0,api.width,api.height);const p=api.params('ball');api.object('ball',(c,p)=>{c.fillStyle=p.color;c.beginPath();c.arc(100,150,30,0,Math.PI*2);c.fill();},{x:time*p.speed});api.text('title');}};"
+    }
+  },
+  "scenes": [
+    {
+      "id": "one",
+      "sourceId": "demo",
+      "name": "Canvas 动画",
+      "in": 0,
+      "out": 6,
+      "hold": 0,
+      "objects": [],
+      "texts": [],
+      "objectOverrides": {},
+      "subtitles": []
     }
   ],
   "audioTracks": []

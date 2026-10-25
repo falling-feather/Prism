@@ -1,5 +1,7 @@
 # SVGFilm 0.3 工程协议入口
 
+当前工作台为0.4，继续读取本页所述0.3工程。新来源、参数与独立素材规范见[0.4入口](SVGFilm_工程格式_v0.4.md)；下方参考指向持续维护的现行规范。
+
 正式协议的唯一文档来源是工作区 [svgfilm-authoring Skill](../../.agents/skills/svgfilm-authoring/SKILL.md) 中的参考：
 
 - [工程数据结构](../../.agents/skills/svgfilm-authoring/references/project.md)

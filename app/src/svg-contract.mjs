@@ -101,34 +101,3 @@ export function validateSvgContract(source, canvas) {
       throw Error(`动画 target 不存在或不可编辑：${a.target}`);
   return doc;
 }
-export function validateCatalog(scene, catalog) {
-  for (const key of ["objects", "texts"]) {
-    if (!scene[key].length) continue;
-    const expected = new Map(catalog[key].map((x) => [x.id, x]));
-    if (scene[key].length !== expected.size)
-      throw Error(
-        `${key} 清单不完整，请保留工作台登记结果或首次导入时使用空数组`,
-      );
-    for (const entry of scene[key]) {
-      const original = expected.get(entry.id);
-      if (!original) throw Error(`${key} 引用失效：${entry.id}`);
-      if (key === "texts" && entry.objectId !== original.objectId)
-        throw Error(`文字 objectId 引用失效：${entry.id}`);
-      if (
-        key === "objects" &&
-        (entry.parentId !== original.parentId ||
-          !Number.isFinite(entry.cx) ||
-          !Number.isFinite(entry.cy))
-      )
-        throw Error(`组件层级或中心无效：${entry.id}`);
-      if (
-        key === "texts" &&
-        (!Number.isFinite(entry.start) ||
-          !Number.isFinite(entry.end) ||
-          entry.start < 0 ||
-          entry.end <= entry.start)
-      )
-        throw Error(`文字可见时间无效：${entry.id}`);
-    }
-  }
-}

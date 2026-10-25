@@ -98,27 +98,19 @@ header {
 .brand {
   display: flex;
   align-items: center;
-  gap: 11px;
-  min-width: 226px;
+  gap: 6px;
+  min-width: 180px;
 }
-.brand-icon {
-  background: #e8eee6;
-  border-radius: 10px;
-  font-size: 31px;
-  width: 43px;
-  height: 43px;
-  text-align: center;
-  color: var(--accent);
-}
-.brand strong {
-  font-size: 17px;
-  letter-spacing: -0.4px;
-}
-.brand small {
+.brand-logo {
   display: block;
-  color: var(--muted);
-  font-size: 10px;
-  margin-top: 4px;
+  width: 168px;
+  height: 64px;
+  object-fit: contain;
+  object-position: left center;
+}
+.brand-mark,
+.brand-name {
+  display: none;
 }
 .project-title {
   display: flex;
@@ -162,6 +154,22 @@ nav {
   flex-direction: column;
   min-height: 0;
 }
+.source-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 0 8px 6px;
+}
+#sourceDialog progress {
+  width: 100%;
+}
+#sourceStatus {
+  overflow-wrap: anywhere;
+}
+.import-options {display:grid;gap:8px;max-height:48vh;overflow:auto;margin:12px 0;}
+.import-options button {display:grid;text-align:left;gap:5px;white-space:normal;padding:12px;}
+.import-options small {overflow-wrap:anywhere;color:var(--muted);}
+#sourceNotes {font-size:12px;max-height:20vh;overflow:auto;}
 .panel-heading {
   height: 53px;
   display: flex;
@@ -758,9 +766,6 @@ progress {
   .brand {
     min-width: 180px;
   }
-  .brand small {
-    display: none;
-  }
   .project-title input {
     width: 190px;
   }
@@ -802,11 +807,18 @@ progress {
   .brand {
     min-width: 0;
   }
-  .brand strong {
-    font-size: 13px;
-  }
-  .brand-icon {
+  .brand-logo {
     display: none;
+  }
+  .brand-mark {
+    display: block;
+    width: 32px;
+    height: 32px;
+    object-fit: contain;
+  }
+  .brand-name {
+    display: block;
+    font-size: 14px;
   }
   .project-title {
     display: none;

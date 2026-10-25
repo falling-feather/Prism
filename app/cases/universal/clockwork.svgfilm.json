@@ -1,0 +1,107 @@
+{
+  "schema": "svgfilm-project",
+  "schemaVersion": "0.4.0",
+  "projectId": "clockwork",
+  "title": "Canvas · 参数化时钟",
+  "canvas": {
+    "width": 640,
+    "height": 360,
+    "fps": 24,
+    "background": "#f3efe4"
+  },
+  "sources": {
+    "clockwork": {
+      "type": "canvas-program-v1",
+      "duration": 6,
+      "canvas": {
+        "width": 640,
+        "height": 360
+      },
+      "objects": [
+        {
+          "id": "dial",
+          "label": "钟面",
+          "bounds": [
+            210,
+            100,
+            220,
+            220
+          ],
+          "parameters": {
+            "ink": {
+              "type": "color",
+              "label": "钟面颜色",
+              "default": "#315f74"
+            }
+          }
+        },
+        {
+          "id": "hand",
+          "label": "指针",
+          "parentId": "dial",
+          "bounds": [
+            315,
+            120,
+            10,
+            90
+          ],
+          "parameters": {
+            "speed": {
+              "type": "number",
+              "label": "转速",
+              "default": 1,
+              "min": 0,
+              "max": 4,
+              "step": 0.25
+            },
+            "length": {
+              "type": "number",
+              "label": "指针长度",
+              "default": 85,
+              "min": 30,
+              "max": 100,
+              "step": 1
+            }
+          }
+        },
+        {
+          "id": "title",
+          "label": "标题",
+          "bounds": [
+            80,
+            30,
+            480,
+            40
+          ],
+          "text": {
+            "text": "时间，如何被看见？",
+            "x": 320,
+            "y": 60,
+            "size": 30,
+            "font": "Microsoft YaHei, sans-serif",
+            "fill": "#26324f",
+            "anchor": "middle",
+            "start": 0,
+            "end": 6
+          }
+        }
+      ],
+      "program": "return {\n  render(ctx, time, api) {\n    ctx.fillStyle = '#f3efe4'; ctx.fillRect(0, 0, api.width, api.height);\n    api.object('dial', (c, p) => {\n      c.strokeStyle = p.ink; c.lineWidth = 4; c.beginPath(); c.arc(320,210,105,0,Math.PI*2); c.stroke();\n      for(let i=0;i<12;i++){const a=i*Math.PI/6;c.beginPath();c.moveTo(320+Math.sin(a)*90,210-Math.cos(a)*90);c.lineTo(320+Math.sin(a)*99,210-Math.cos(a)*99);c.stroke();}\n      const hand = api.params('hand');\n      api.object('hand', (c,p)=>{c.strokeStyle='#c3452f';c.lineWidth=7;c.lineCap='round';c.beginPath();c.moveTo(320,210);c.lineTo(320,210-p.length);c.stroke();},\n        {rotation:time*60*hand.speed,origin:[320,210],bounds:[315,210-hand.length,10,hand.length]});\n    });\n    api.text('title');\n  }\n};"
+    }
+  },
+  "scenes": [
+    {
+      "id": "scene-clockwork",
+      "sourceId": "clockwork",
+      "name": "Canvas · 参数化时钟",
+      "in": 0,
+      "out": 6,
+      "hold": 0,
+      "objects": [],
+      "texts": [],
+      "objectOverrides": {},
+      "subtitles": []
+    }
+  ],
+  "audioTracks": []
+}

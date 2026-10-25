@@ -18,6 +18,7 @@ exports/
 /app/docs/*
 !/app/docs/SVGFilm_工程格式_v0.2.md
 !/app/docs/SVGFilm_工程格式_v0.3.md
+!/app/docs/SVGFilm_工程格式_v0.4.md
 /app/cases/cell_structure/scenes/
 /app/cases/cell_structure/cell_structure.svgfilm.json
 /app/cases/cell_structure/manifest.json
@@ -35,4 +36,5 @@ exports/
 *.pem
 *.key
 .DS_Store
+/app/tools/source-import/node_modules/
 Thumbs.db

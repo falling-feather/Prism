@@ -137,6 +137,14 @@ export class CanvasSelection {
       }
       return true;
     };
+    // Non-DOM renderers supply geometry proxies; their transparent fill is intentional.
+    if (node.querySelector("[data-proxy-bounds]")) {
+      return unionBounds(
+        [...node.querySelectorAll("[data-proxy-bounds]")]
+          .filter(shown)
+          .map((leaf) => box(leaf.getBoundingClientRect())),
+      );
+    }
     const paints = (value) =>
       value !== "none" &&
       value !== "transparent" &&
